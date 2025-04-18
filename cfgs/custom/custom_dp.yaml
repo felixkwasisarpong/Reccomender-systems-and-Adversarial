@@ -1,0 +1,33 @@
+seed_everything: 0
+
+model:
+  class_path: models.CustomDP_SGD
+  init_args:
+    num_users: 95362
+    num_items: 30
+    embed_dim: 64
+    loss_function: "Huber"  
+    l2_penalty: 1e-4
+    dropout_rate: 0.1
+    learning_rate: 0.001
+    noise_scale: 3.5
+
+    # DP parameters
+
+    delta: 1e-2
+    dropout_rate: 0.2
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 0.001
+    weight_decay: 1e-4
+    betas: [0.9, 0.999]
+
+
+# Lightning execution flow flags
+do_train: true
+do_test: true
+do_predict: false
+do_validate: true  # Important for DP monitoring
+do_analyze: true
+
