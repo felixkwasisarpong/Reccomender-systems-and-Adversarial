@@ -1,4 +1,4 @@
 data_dir: DATA_DIR_PATH
-batch_size: 1024
-num_workers: 2
-max_samples: 400000
+batch_size: 16
+num_workers: 8
+max_samples: 40000

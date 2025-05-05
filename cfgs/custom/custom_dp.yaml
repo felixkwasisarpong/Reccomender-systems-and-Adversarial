@@ -3,25 +3,19 @@ seed_everything: 0
 model:
   class_path: models.CustomDP_SGD
   init_args:
-    num_users: 95362
-    num_items: 30
+    num_users: 480189
+    num_items: 17770
     embed_dim: 64
-    loss_function: "Huber"  
-    l2_penalty: 1e-4
-    dropout_rate: 0.1
-    learning_rate: 0.001
-    noise_scale: 3.5
+    loss_function: "MSE"
+    l2_penalty: 1e-3
+    learning_rate: 2e-4
+    enable_dp: false  
+    noise_scale: 3.23
 
     # DP parameters
 
-    delta: 1e-2
+    delta: 1e-5
     dropout_rate: 0.2
-optimizer:
-  class_path: torch.optim.AdamW
-  init_args:
-    lr: 0.001
-    weight_decay: 1e-4
-    betas: [0.9, 0.999]
 
 
 # Lightning execution flow flags

@@ -1,0 +1,23 @@
+
+[Dataset Summary - Mode: train]
+  Total samples: 40000
+  Unique users: 35546
+  Unique movies: 286
+  Ratings Distribution:
+    Rating: 1.0 — Count: 1783
+    Rating: 2.0 — Count: 3761
+    Rating: 3.0 — Count: 10867
+    Rating: 4.0 — Count: 13917
+    Rating: 5.0 — Count: 9672
+
+[Dataset Summary - Mode: val]
+  Total samples: 40000
+  Unique users: 35430
+  Unique movies: 287
+  Ratings Distribution:
+    Rating: 1.0 — Count: 1777
+    Rating: 2.0 — Count: 3767
+    Rating: 3.0 — Count: 10814
+    Rating: 4.0 — Count: 14052
+    Rating: 5.0 — Count: 9590
+Sanity Checking: 0it [00:00, ?it/s]Sanity Checking:   0%|          | 0/2 [00:00<?, ?it/s]Sanity Checking DataLoader 0:   0%|          | 0/2 [00:00<?, ?it/s]Sanity Checking DataLoader 0:  50%|█████     | 1/2 [00:02<00:02,  2.17s/it]Sanity Checking DataLoader 0: 100%|██████████| 2/2 [00:02<00:00,  1.09s/it]                                                                           Training: 0it [00:00, ?it/s]Training:   0%|          | 0/2500 [00:00<?, ?it/s]Epoch 0:   0%|          | 0/2500 [00:00<?, ?it/s] Epoch 0:   0%|          | 1/2500 [00:00<06:21,  6.55it/s]Epoch 0:   0%|          | 1/2500 [00:00<06:22,  6.53it/s, v_num=2scj]

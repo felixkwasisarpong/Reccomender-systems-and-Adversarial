@@ -5,6 +5,8 @@ from models.BaseModel import BaseModel  # noqa
 from models.DPModel import DPModel  # noqa
 from models.CustomDP_SGD import CustomDP_SGD
 from dataloader.NetflixDataModule import NetflixDataModule
+from models.MembershipInferenceAttack import MembershipInferenceAttack  # replace with your actual path
+from models.DPMembershipInferenceAttack import DPMembershipInferenceAttack  # replace with your actual path
 import wandb
 import torch
 import os
@@ -57,34 +59,23 @@ class MyLightningCLI(LightningCLI):
         if hasattr(self.model, "privacy_engine"):
              wandb.define_metric("epsilon", step_metric="epoch", summary="max")
 
-    # def _generate_netflix_predictions(self):
-    #         """Handle Netflix qualifying predictions"""
-    #         predictor = NetflixPredictor(
-    #             model=self.model,
-    #             dataset=self.datamodule.dataset  # Assuming datamodule exposes dataset
-    #         )
-            
-    #         qualifying_data = predictor.load_qualifying_data(
-    #             os.path.join(self.datamodule.data_dir, self.config.qualifying_file)
-    #         )
-            
-    #         predictions = predictor.predict_ratings(qualifying_data)
-            
-    #         output_path = os.path.join(
-    #             self.trainer.default_root_dir,
-    #             self.config.output_predictions
-    #         )
-            
-    #         with open(output_path, "w") as f:
-    #             f.write(predictions)
-            
-    #         print(f"Predictions saved to {output_path}")
-    #         wandb.save(output_path) if wandb.run else None
+
 def main():
+
+    import h5py
+
+    def inspect_file(path):
+        print(f"\n📂 Inspecting file: {path}")
+        with h5py.File(path, 'r') as f:
+            def print_structure(name, obj):
+                print(f"  {name} -> {type(obj)}")
+            f.visititems(print_structure)
+
+
 
     # LightningCLI automatically creates an argparse parser with required arguments and types,
     # and instantiates the model and datamodule. For this, it's important to import the model and datamodule classes above.
-    cli = MyLightningCLI(None, NetflixDataModule, subclass_mode_model=True, save_config_kwargs={
+    cli = MyLightningCLI(None, NetflixDataModule,subclass_mode_model=True, save_config_kwargs={
         "overwrite": True}, parser_kwargs={"parser_mode": "yaml"}, run=False)
     #cli.wandb_setup()
 
@@ -103,10 +94,36 @@ def main():
         cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
 
     if cli.config.do_test:
+        # Run normal test first (with standard model)
         cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
+
+
+
     if cli.config.do_predict:
         predictions = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
-        # Handle predictions saving...
+
+    if cli.config.do_analyze:
+        #mia_model = MembershipInferenceAttack.load_from_checkpoint("lightning_logs/base/dp_fm/blqsy8mu/checkpoints/epoch=0-step=5000.ckpt")
+        mia_model = DPMembershipInferenceAttack.load_dp_checkpoint("lightning_logs/weak/dp_fm/16kn7gdh/checkpoints/epoch=1-step=10000.ckpt")
+ 
+        # Define the paths for your member and non-member datasets
+        member_data_path = "netflix_data/member"
+        nonmember_data_path = "netflix_data/nonmember"
+        
+
+        mia_loaders = cli.datamodule.mia_dataloaders(member_data_path, nonmember_data_path)
+
+        
+        # Ensure there are two dataloaders before calling test
+        print(f"MIA loader count: {len(mia_loaders)}")
+        # Run it for both files:
+
+        # Run the test with the dataloaders
+        cli.trainer.test(mia_model, dataloaders=mia_loaders)
+
+
 
 if __name__ == "__main__":
     main()
+
+

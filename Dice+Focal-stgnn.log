@@ -1,0 +1,136 @@
+[rank: 0] Global seed set to 0
+Using the following dataset split:
+Train years: [2018, 2019], Val years: [2020], Test years: [2021]
+wandb: Currently logged in as: felixsarpong25 (felixsarpong25-student). Use `wandb login --relogin` to force relogin
+wandb: WARNING Path ./lightning_logs/stgnn/wandb/ wasn't writable, using system temp directory.
+wandb: WARNING Path ./lightning_logs/stgnn/wandb/ wasn't writable, using system temp directory
+wandb: wandb version 0.19.9 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
+wandb: Tracking run with wandb version 0.15.3
+wandb: Run data is saved locally in /tmp/wandb/run-20250418_163929-ys7txttz
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run models.STGNNLightning
+wandb: ⭐️ View project at https://wandb.ai/felixsarpong25-student/wildfire_progression
+wandb: 🚀 View run at https://wandb.ai/felixsarpong25-student/wildfire_progression/runs/ys7txttz
+/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/lightning_fabric/connector.py:562: UserWarning: 16 is supported for historical reasons but its usage is discouraged. Please set your precision to 16-mixed instead!
+  rank_zero_warn(
+Using 16bit Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Using the following dataset split:
+Train years: [2018, 2019], Val years: [2020], Test years: [2021]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+  | Name               | Type                       | Params
+------------------------------------------------------------------
+0 | train_f1           | BinaryF1Score              | 0     
+1 | val_f1             | BinaryF1Score              | 0     
+2 | test_f1            | BinaryF1Score              | 0     
+3 | test_avg_precision | BinaryAveragePrecision     | 0     
+4 | test_precision     | BinaryPrecision            | 0     
+5 | test_recall        | BinaryRecall               | 0     
+6 | test_iou           | BinaryJaccardIndex         | 0     
+7 | conf_mat           | BinaryConfusionMatrix      | 0     
+8 | test_pr_curve      | BinaryPrecisionRecallCurve | 0     
+9 | model              | STGNN_Lite                 | 268 K 
+------------------------------------------------------------------
+268 K     Trainable params
+0         Non-trainable params
+268 K     Total params
+1.075     Total estimated model params size (MB)
+SLURM auto-requeueing enabled. Setting signal handlers.
+Sanity Checking: 0it [00:00, ?it/s]/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py:430: PossibleUserWarning: The dataloader, val_dataloader, does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` (try 40 which is the number of cpus on this machine) in the `DataLoader` init to improve performance.
+  rank_zero_warn(
+/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/utilities/data.py:103: UserWarning: Total length of `DataLoader` across ranks is zero. Please make sure this was your intention.
+  rank_zero_warn(
+                                   Traceback (most recent call last):
+  File "/home/fsarpong/WildfireSpreadTS-main/src/Run.py", line 127, in <module>
+    main()
+  File "/home/fsarpong/WildfireSpreadTS-main/src/Run.py", line 93, in main
+    cli.trainer.fit(cli.model, cli.datamodule,
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 520, in fit
+    call._call_and_handle_interrupt(
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 44, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 559, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 935, in _run
+    results = self._run_stage()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 978, in _run_stage
+    self.fit_loop.run()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 193, in run
+    self.setup_data()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 221, in setup_data
+    train_dataloader = _request_dataloader(source)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py", line 328, in _request_dataloader
+    return data_source.dataloader()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/data_connector.py", line 298, in dataloader
+    return call._call_lightning_datamodule_hook(self.instance.trainer, self.name)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 162, in _call_lightning_datamodule_hook
+    return fn(*args, **kwargs)
+  File "/home/fsarpong/WildfireSpreadTS-main/src/dataloader/FireDataModule.py", line 83, in train_dataloader
+    return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/lightning_fabric/utilities/data.py", line 330, in wrapper
+    init(obj, *args, **kwargs)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 351, in __init__
+    sampler = RandomSampler(dataset, generator=generator)  # type: ignore[arg-type]
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/torch/utils/data/sampler.py", line 107, in __init__
+    raise ValueError("num_samples should be a positive integer "
+ValueError: num_samples should be a positive integer value, but got num_samples=0
+
+-------------------------------------------------------------------------------
+Run.py 127 <module>
+main()
+
+Run.py 93 main
+cli.trainer.fit(cli.model, cli.datamodule,
+
+trainer.py 520 fit
+call._call_and_handle_interrupt(
+
+call.py 44 _call_and_handle_interrupt
+return trainer_fn(*args, **kwargs)
+
+trainer.py 559 _fit_impl
+self._run(model, ckpt_path=ckpt_path)
+
+trainer.py 935 _run
+results = self._run_stage()
+
+trainer.py 978 _run_stage
+self.fit_loop.run()
+
+fit_loop.py 193 run
+self.setup_data()
+
+fit_loop.py 221 setup_data
+train_dataloader = _request_dataloader(source)
+
+data_connector.py 328 _request_dataloader
+return data_source.dataloader()
+
+data_connector.py 298 dataloader
+return call._call_lightning_datamodule_hook(self.instance.trainer, self.name)
+
+call.py 162 _call_lightning_datamodule_hook
+return fn(*args, **kwargs)
+
+FireDataModule.py 83 train_dataloader
+return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True)
+
+data.py 330 wrapper
+init(obj, *args, **kwargs)
+
+dataloader.py 351 __init__
+sampler = RandomSampler(dataset, generator=generator)  # type: ignore[arg-type]
+sampler.py 107 __init__
+raise ValueError("num_samples should be a positive integer "
+
+ValueError:
+num_samples should be a positive integer value, but got num_samples=0
+wandb: Waiting for W&B process to finish... (failed 1). Press Control-C to abort syncing.
+wandb: 🚀 View run models.STGNNLightning at: https://wandb.ai/felixsarpong25-student/wildfire_progression/runs/ys7txttz
+wandb: Synced 6 W&B file(s), 0 media file(s), 0 artifact file(s) and 1 other file(s)
+wandb: Find logs at: /tmp/wandb/run-20250418_163929-ys7txttz/logs

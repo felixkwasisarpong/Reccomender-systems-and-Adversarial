@@ -6,10 +6,10 @@ model:
   init_args:
     num_users: 480189
     num_items: 17770
-    embed_dim: 128
-    loss_function: "Huber"
-    l2_penalty: 1e-3
-    dropout_rate: 0.3
+    embed_dim: 512
+    loss_function: "MSE"
+    l2_penalty: 1e-5
+    dropout_rate: 0.2
     learning_rate: 2e-4
     enable_dp: false
 

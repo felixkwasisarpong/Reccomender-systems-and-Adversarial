@@ -2,7 +2,7 @@ accelerator: gpu
 strategy: auto
 devices: 1
 num_nodes: 1
-precision: 16
+precision: 32-true
 logger: 
   class_path: pytorch_lightning.loggers.wandb.WandbLogger
   init_args:

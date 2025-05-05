@@ -1,109 +1,99 @@
-#!/usr/bin/env python3
-import os
 import h5py
 import numpy as np
+from datetime import datetime
+import os
 from tqdm import tqdm
 
-def convert_netflix_to_hdf5(data_dir, hdf5_file):
-    # Define the structured data type
-    dt = np.dtype([
-        ('user_id', 'i4'),
-        ('movie_id', 'i4'),
-        ('rating', 'f4'),
-        ('date', 'S10')  # Fixed-length string YYYY-MM-DD
-    ])
+def parse_netflix_file(file_path, has_ratings=True):
+    """Parse Netflix file (handles both training and test formats)"""
+    data = []
+    current_user = None
     
-    user_id_to_idx = {}
-    next_user_idx = 0
-    total_ratings = 0
-    rating_sum = 0.0
-    batch_size = 100000
-    batch = np.zeros(batch_size, dtype=dt)
-    batch_idx = 0
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+    
+    for line in tqdm(lines, desc=f"Processing {os.path.basename(file_path)}"):
+        line = line.strip()
+        if not line:
+            continue
+            
+        if line.endswith(':'):
+            current_user = int(line[:-1])
+        else:
+            parts = line.split(',')
+            if has_ratings and len(parts) == 3:  # Training format
+                movie_id = int(parts[0])
+                rating = float(parts[1])
+                date = datetime.strptime(parts[2], "%Y-%m-%d")
+                data.append((current_user, movie_id, rating, date))
+            elif not has_ratings and len(parts) == 2:  # Test/probe format
+                movie_id = int(parts[0])
+                date = datetime.strptime(parts[1], "%Y-%m-%d")
+                data.append((current_user, movie_id, -1.0, date))  # -1 as placeholder
+    
+    return data
 
-    with h5py.File(hdf5_file, 'w') as hf:
-        dset = hf.create_dataset(
-            'ratings',
-            shape=(0,),
-            maxshape=(None,),
-            dtype=dt,
-            compression='gzip',
-            chunks=True
-        )
+def create_hdf5_file(data, output_path, dataset_type='train'):
+    """Create HDF5 file with metadata"""
+    user_ids = np.array([x[0] for x in data], dtype=np.int64)
+    movie_ids = np.array([x[1] for x in data], dtype=np.int32)
+    ratings = np.array([x[2] for x in data], dtype=np.float32)
+    dates = np.array([x[3].timestamp() for x in data], dtype=np.float64)
+    
+    with h5py.File(output_path, 'w') as f:
+        # Store dataset type as attribute
+        f.attrs['dataset_type'] = dataset_type
+        
+        # Only calculate global mean for training data
+        if dataset_type == 'train':
+            f.attrs['global_mean'] = np.mean(ratings)
+            f.attrs['num_ratings'] = len(ratings)
+        else:
+            f.attrs['global_mean'] = 0.0
+            f.attrs['num_ratings'] = len(ratings)
+        
+        # Create datasets
+        ratings_group = f.create_group('ratings')
+        ratings_group.create_dataset('user_id', data=user_ids)
+        ratings_group.create_dataset('movie_id', data=movie_ids)
+        ratings_group.create_dataset('rating', data=ratings)
+        ratings_group.create_dataset('date', data=dates)
 
-        for filename in tqdm(sorted(os.listdir(data_dir)), desc="Processing files"):
-            if not filename.endswith('.txt'):
-                continue
-
-            file_path = os.path.join(data_dir, filename)
-            with open(file_path, 'r') as f:
-                lines = f.readlines()
-                if not lines:
-                    continue
-
-                # First line is movie ID
-                try:
-                    movie_id = int(lines[0].strip().replace(':', ''))
-                except ValueError:
-                    continue  # Skip if movie ID is not valid
-
-                for line in lines[1:]:
-                    try:
-                        user_id, rating, date = line.strip().split(',')
-                        user_id = int(user_id)
-                        rating = float(rating)
-                    except ValueError:
-                        continue  # Skip malformed lines
-
-                    if not (1.0 <= rating <= 5.0):
-                        continue
-
-                    # Map user ID to index
-                    if user_id not in user_id_to_idx:
-                        user_id_to_idx[user_id] = next_user_idx
-                        next_user_idx += 1
-
-                    batch[batch_idx] = (
-                        user_id_to_idx[user_id],
-                        movie_id,
-                        rating,
-                        np.string_(date)
-                    )
-                    batch_idx += 1
-                    total_ratings += 1
-                    rating_sum += rating
-
-                    # Flush batch
-                    if batch_idx == batch_size:
-                        dset.resize((dset.shape[0] + batch_size,))
-                        dset[-batch_size:] = batch
-                        batch_idx = 0
-
-        # Final flush
-        if batch_idx > 0:
-            dset.resize((dset.shape[0] + batch_idx,))
-            dset[-batch_idx:] = batch[:batch_idx]
-
-        hf.attrs['global_mean'] = (rating_sum / total_ratings) if total_ratings > 0 else 0.0
-        hf.attrs['num_ratings'] = total_ratings
-        hf.attrs['num_users'] = len(user_id_to_idx)
-        hf.attrs['num_movies'] = expected_movie_id = len([f for f in os.listdir(data_dir) if f.endswith('.txt')])
-
-        print(f"\n✅ Conversion complete:")
-        print(f"- Unique users: {len(user_id_to_idx):,}")
-        print(f"- Movies processed: {hf.attrs['num_movies']:,}")
-        print(f"- Total ratings: {total_ratings:,}")
-        print(f"- Global average rating: {hf.attrs['global_mean']:.2f}")
-        print(f"📁 Saved to {hdf5_file}")
+def process_all_files( probe_path, qualifying_path, output_dir):
+    """Process all three Netflix files"""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 1. Process training set
+    # print("\nProcessing training set...")
+    # train_data = parse_netflix_file(train_path, has_ratings=True)
+    # train_output = os.path.join(output_dir, "train_data.hdf5")
+    # create_hdf5_file(train_data, train_output, dataset_type='train')
+    
+    # 2. Process probe set (validation)
+    print("\nProcessing probe set (validation)...")
+    probe_data = parse_netflix_file(probe_path, has_ratings=False)
+    probe_output = os.path.join(output_dir, "val_data.hdf5")
+    create_hdf5_file(probe_data, probe_output, dataset_type='val')
+    
+    # 3. Process qualifying set (test)
+    print("\nProcessing qualifying set (test)...")
+    qualifying_data = parse_netflix_file(qualifying_path, has_ratings=False)
+    qualifying_output = os.path.join(output_dir, "test_data.hdf5")
+    create_hdf5_file(qualifying_data, qualifying_output, dataset_type='test')
+    
+    print(f"\nConversion complete. Files saved to {output_dir}:")
+    # print(f"- Training: {train_output}")
+    print(f"- Validation: {probe_output}")
+    print(f"- Test: {qualifying_output}")
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description='Convert Netflix dataset to HDF5 format')
-    parser.add_argument("--folder_path", required=True, help="Path to the training_set folder")
-    parser.add_argument("--output", default="netflix_data.hdf5", help="Output HDF5 filename")
-    args = parser.parse_args()
-
-    if not args.output.endswith(".hdf5"):
-        args.output += ".hdf5"
-
-    convert_netflix_to_hdf5(args.folder_path, args.output)
+    # Configure paths
+    data_dir = "netflix_data"  # Directory containing raw files
+    output_dir = "netflix_data"  # Where to save HDF5 files
+    
+    # train_file = os.path.join(data_dir, "training_set.txt")  # Original training data
+    probe_file = os.path.join(data_dir, "probe.txt")        # Validation set
+    qualifying_file = os.path.join(data_dir, "qualifying.txt")  # Final test set
+    
+    # Run conversion
+    process_all_files(probe_file, qualifying_file, output_dir)
