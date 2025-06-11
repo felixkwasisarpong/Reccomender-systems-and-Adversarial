@@ -7,9 +7,10 @@ from .DPModel import DPModel
 from sklearn.metrics import roc_auc_score, roc_curve
 import torch.nn as nn
 import matplotlib.pyplot as plt
+from models.CustomDP_SGD import CustomDP_SGD
 
 
-class MembershipInferenceAttack(DPModel):
+class CustomMembershipInferenceAttack(CustomDP_SGD):
     def __init__(self, *args, **kwargs):
         kwargs["enable_dp"] = False
         super().__init__(*args, **kwargs)

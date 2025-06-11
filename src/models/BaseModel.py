@@ -105,21 +105,20 @@ class BaseModel(pl.LightningModule):
 
     def _shared_step(self, batch, batch_idx, prefix: str):
         user_ids, item_ids, targets = batch
-
-        # Normalize targets from [1.0, 5.0] → [0.0, 1.0]
-        targets = (targets - 1.0) / 4.0
-
+        
+        # Normalize targets consistently
+        targets_norm = (targets - 1.0) / 4.0
+        
         y_pred = self(user_ids, item_ids)
-
-        loss = self.loss_fn(y_pred, targets).mean()
-
-        # Denormalize predictions for metrics (optional but preferred)
-        preds_denorm = y_pred * 4.0 + 1.0
-        targets_denorm = targets * 4.0 + 1.0
-
-        self._update_metrics(preds_denorm, targets_denorm, prefix)
-
-        self.log(f"{prefix}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
+        loss = self.loss_fn(y_pred, targets_norm).mean()
+        
+        # Denormalize predictions and clamp to valid range
+        preds_denorm = torch.clamp(y_pred * 4.0 + 1.0, 1.0, 5.0)
+        
+        # Use original targets for metrics
+        self._update_metrics(preds_denorm, targets, prefix)
+        self.log(f"{prefix}_loss", loss, prog_bar=True)
+        
         return loss
 
         

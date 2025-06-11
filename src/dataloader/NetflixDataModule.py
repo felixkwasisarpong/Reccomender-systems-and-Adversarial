@@ -1,10 +1,11 @@
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from opacus.data_loader import DPDataLoader
 from .NetflixDataset import NetflixDataset
 import pytorch_lightning as pl
 from typing import Optional
 import os
 import torch
+
 
 class NetflixDataModule(pl.LightningDataModule):
     def __init__(
@@ -28,6 +29,8 @@ class NetflixDataModule(pl.LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
+        self.member_dataset = None
+        self.nonmember_dataset = None
 
     def setup(self, stage: Optional[str] = None):
         common_args = {
@@ -51,12 +54,17 @@ class NetflixDataModule(pl.LightningDataModule):
             )
         
         if stage == 'test' or stage is None:
-            test_path = os.path.join(self.data_dir, "test_data.hdf5")
+            test_path = os.path.join(self.data_dir, "movies.hdf5")
             self.test_dataset = NetflixDataset(
                 h5_path=test_path,
                 mode='test',
                 **common_args
             )
+
+    def setup_mia(self, member_dir: str, nonmember_dir: str):
+        """Setup for MIA analysis with member and non-member datasets."""
+        self.member_dataset = NetflixDataset(member_dir, mode="train")
+        self.nonmember_dataset = NetflixDataset(nonmember_dir, mode="test")
 
     def train_dataloader(self):
         loader_args = {
@@ -95,8 +103,63 @@ class NetflixDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=True)
 
+    def member_dataloader(self):
+        """Dataloader for member dataset."""
+        return DataLoader(
+            dataset=self.member_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True
+        )
+
+    def nonmember_dataloader(self):
+        """Dataloader for non-member dataset."""
+        return DataLoader(
+            dataset=self.nonmember_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True
+        )
+
     def get_num_users(self):
         return self.train_dataset.get_num_users()
 
     def get_num_movies(self):
         return self.train_dataset.get_num_movies()
+    
+
+    def mia_dataloaders(self, member_dir, nonmember_dir):
+        member_ds    = NetflixDataset(member_dir,    mode="train")
+        nonmember_ds = NetflixDataset(nonmember_dir, mode="test")
+
+        mia_ds = MIADataset(member_ds, nonmember_ds)
+        mia_loader = DataLoader(
+            mia_ds,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers
+        )
+        return [mia_loader]    # list of length 1
+
+
+
+class MIADataset(torch.utils.data.Dataset):
+    def __init__(self, member_ds, nonmember_ds):
+        self.member_ds = member_ds
+        self.nonmember_ds = nonmember_ds
+        self.len_m = len(member_ds)
+        self.len_n = len(nonmember_ds)
+
+    def __len__(self):
+        return self.len_m + self.len_n
+
+    def __getitem__(self, idx):
+        if idx < self.len_m:
+            u, i, r = self.member_ds[idx]
+            label = 1
+        else:
+            u, i, r = self.nonmember_ds[idx - self.len_m]
+            label = 0
+        return u, i, r, torch.tensor(label, dtype=torch.float32)

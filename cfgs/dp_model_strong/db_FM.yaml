@@ -1,0 +1,22 @@
+seed_everything: 0
+
+model:
+  class_path: models.DPModel
+  init_args:
+    num_users: 480189
+    num_items: 17770
+    embed_dim: 128
+    loss_function: "MSE"
+    l2_penalty: 1e-3
+    dropout_rate: 0.3
+    max_grad_norm: 1.0
+    target_delta: 1e-5
+    target_epsilon: 0.2
+
+    enable_dp: true
+
+do_train: true
+do_test: true
+do_predict: false
+do_validate: true
+do_analyze: false

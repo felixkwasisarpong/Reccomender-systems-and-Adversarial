@@ -1,8 +1,8 @@
-accelerator: cpu
+accelerator: gpu
 strategy: auto
 devices: 1
 num_nodes: 1
-precision: 32
+precision: 32-true
 logger: 
   class_path: pytorch_lightning.loggers.wandb.WandbLogger
   init_args:
@@ -46,4 +46,4 @@ barebones: false
 plugins: null
 sync_batchnorm: false
 reload_dataloaders_every_n_epochs: 0
-default_root_dir: ./lightning_logs/strong
+default_root_dir: ./lightning_logs/mid

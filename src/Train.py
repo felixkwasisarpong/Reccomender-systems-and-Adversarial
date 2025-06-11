@@ -7,6 +7,7 @@ from models.CustomDP_SGD import CustomDP_SGD
 from dataloader.NetflixDataModule import NetflixDataModule
 from models.MembershipInferenceAttack import MembershipInferenceAttack  # replace with your actual path
 from models.DPMembershipInferenceAttack import DPMembershipInferenceAttack  # replace with your actual path
+from models.CustomMembershipInferenceAttack import CustomMembershipInferenceAttack  # replace with your actual path
 import wandb
 import torch
 import os
@@ -103,23 +104,21 @@ def main():
         predictions = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
 
     if cli.config.do_analyze:
-        #mia_model = MembershipInferenceAttack.load_from_checkpoint("lightning_logs/base/dp_fm/blqsy8mu/checkpoints/epoch=0-step=5000.ckpt")
-        mia_model = DPMembershipInferenceAttack.load_dp_checkpoint("lightning_logs/weak/dp_fm/16kn7gdh/checkpoints/epoch=1-step=10000.ckpt")
- 
+        # Load the MIA model checkpoint
+        #mia_model = DPMembershipInferenceAttack.load_dp_checkpoint(
+        #    "lightning_logs/strong/dp_fm/giqhfsyr/checkpoints/epoch=3-step=10000.ckpt"
+        #)
+        mia_model = CustomMembershipInferenceAttack.load_from_checkpoint("lightning_logs/cus_str/dp_fm/74zissqm/checkpoints/epoch=39-step=6280.ckpt")
+
         # Define the paths for your member and non-member datasets
-        member_data_path = "netflix_data/member"
-        nonmember_data_path = "netflix_data/nonmember"
-        
+        member_data_path = "netflix_data/netflix_data.hdf5"
+        nonmember_data_path = "netflix_data/movies.hdf5"
 
-        mia_loaders = cli.datamodule.mia_dataloaders(member_data_path, nonmember_data_path)
+        # Get the DataLoader that includes both member and non-member datasets
+        mia_loader = cli.datamodule.mia_dataloaders(member_data_path, nonmember_data_path)[0]
 
-        
-        # Ensure there are two dataloaders before calling test
-        print(f"MIA loader count: {len(mia_loaders)}")
-        # Run it for both files:
-
-        # Run the test with the dataloaders
-        cli.trainer.test(mia_model, dataloaders=mia_loaders)
+        # Run the test step with the appropriate DataLoader
+        cli.trainer.test(mia_model, dataloaders=[mia_loader])
 
 
 

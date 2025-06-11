@@ -1,14 +1,10 @@
-
-from torch.optim.lr_scheduler import CosineAnnealingLR, SequentialLR, LinearLR
+import torch
+import math
+import wandb
+import torch.nn as nn
+import pytorch_lightning as pl
+from torchmetrics import MeanSquaredError, MeanAbsoluteError
 from .BaseModel import BaseModel
-import torch
-import torch.nn as nn
-import numpy as np
-import math
-import torch
-import torch.nn as nn
-import math
-
 class CustomDP_SGD(BaseModel):
     def __init__(
         self,
@@ -17,107 +13,119 @@ class CustomDP_SGD(BaseModel):
         embed_dim: int = 64,
         learning_rate: float = 1e-3,
         loss_function: str = "RMSE",
-        dropout_rate: float = 0.3,
         l2_penalty: float = 1e-4,
-        noise_scale: float = 1.0,
-        clip_norm: float = 1.0,
-        delta: float = 1e-5,
-        batch_size: int = 512,
-        dataset_size: int = 480189 * 17770,
-        **kwargs
+        dropout_rate: float = 0.2,
+        noise_scale: float = 0.0,      # DP parameter
+        clip_norm: float = 1.0,        # DP parameter
+        delta: float = 1e-5,           # DP parameter
+        log_freq: int = 50,
+        enable_dp=True
+                    # Logging frequency
     ):
+        """
+        Differentially Private Recommendation Model
+        
+        Args:
+            noise_scale: Noise multiplier for DP (σ)
+            clip_norm: Gradient clipping norm (C)
+            delta: Privacy parameter (δ)
+            log_freq: Frequency of WandB logging (in batches)
+        """
         super().__init__(
             num_users=num_users,
             num_items=num_items,
             embed_dim=embed_dim,
             learning_rate=learning_rate,
             loss_function=loss_function,
-            dropout_rate=dropout_rate,
             l2_penalty=l2_penalty,
-            **kwargs
+            dropout_rate=dropout_rate,
+            enable_dp=False  # Indicate we're using DP
         )
-        self.noise_multiplier = noise_scale
+        
+        # DP-specific parameters
+        self.noise_scale = noise_scale
         self.clip_norm = clip_norm
         self.delta = delta
-        self.batch_size = batch_size
-        self.dataset_size = dataset_size
-        self.sample_rate = batch_size / dataset_size
-        self.steps = 0
-        self.privacy_budget = 0
-        self.alphas = [1 + x / 10.0 for x in range(1, 100)] + list(range(12, 64))
+        self.privacy_steps = 0
+        self.sample_rate = None
+        self.log_freq = log_freq
         self.automatic_optimization = False
+        self.epsilon_history = []
+        self.metric_history = []  # AUC or RMSE depending on your use
 
+    def on_train_start(self):
+        """Initialize sample rate when training begins"""
+        if self.trainer.train_dataloader is not None:
+            batch_size = self.trainer.train_dataloader.batch_size
+            self.sample_rate = batch_size / self.hparams.num_users
+            self.log("sample_rate", self.sample_rate)
+    
+    def configure_dataloader(self, batch_size: int):
+        """Set the sample rate for DP accounting"""
+        self.sample_rate = batch_size / self.hparams.num_users
+
+    
     def training_step(self, batch, batch_idx):
-        users, items, ratings = batch
-        batch_size = users.size(0)
-
-        # Enable individual loss outputs
-        predictions = self(users, items)
-        criterion = nn.MSELoss(reduction='none')
-        losses = criterion(predictions, ratings)
-
-        # Collect per-sample gradients
-        per_sample_grads = []
-        for i in range(batch_size):
-            self.zero_grad()
-            losses[i].backward(retain_graph=True)
-            grads = [p.grad.detach().clone() if p.grad is not None else None for p in self.parameters()]
-            per_sample_grads.append(grads)
-
-        # Clip gradients
-        clipped_grads = []
-        for grads in per_sample_grads:
-            total_norm = torch.sqrt(sum([(g.norm(2) ** 2) for g in grads if g is not None]))
-            clip_coef = min(1.0, self.clip_norm / (total_norm + 1e-6))
-            clipped = [g * clip_coef if g is not None else None for g in grads]
-            clipped_grads.append(clipped)
-
-        # Aggregate and add noise
-        final_grads = []
-        for param_i in range(len(clipped_grads[0])):
-            stacked = torch.stack([
-                grads[param_i] for grads in clipped_grads if grads[param_i] is not None
-            ])
-            mean_grad = stacked.mean(dim=0)
-            noise = torch.randn_like(mean_grad) * self.noise_multiplier * self.clip_norm / batch_size
-            final_grads.append(mean_grad + noise)
-
-        # Set final noisy gradients
-        for p, g in zip(self.parameters(), final_grads):
-            if p.requires_grad:
-                p.grad = g
-
-        # Step optimizer
-        self.optimizers().step()
+        # Forward pass and loss calculation
+        user_ids, item_ids, targets = batch
+        targets_norm = (targets - 1.0) / 4.0
+        y_pred = self(user_ids, item_ids)
+        loss = self.loss_fn(y_pred, targets_norm).mean()
+        
+        # Backward pass
         self.optimizers().zero_grad()
-
-        # Update privacy accounting
-        self.steps += 1
-        self._update_privacy_budget()
-
-        return losses.mean()
-
-    def _update_privacy_budget(self):
-        if self.noise_multiplier == 0:
-            self.privacy_budget = float('inf')
-            return
-
+        self.manual_backward(loss)
+        
+        # DP modifications
+        if self.noise_scale > 0:
+            # 1. Clip gradients
+            torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_norm)
+            
+            # 2. Add noise
+            for param in self.parameters():
+                if param.grad is not None:
+                    noise = torch.randn_like(param.grad) * self.noise_scale * self.clip_norm
+                    param.grad += noise
+            
+            # 3. Update privacy accounting
+            self.privacy_steps += 1
+            current_epsilon = self._compute_epsilon()
+            
+            self.log("train/epsilon", current_epsilon, prog_bar=True)
+        
+        # Update parameters
+        self.optimizers().step()
+        
+        # Update metrics
+        preds_denorm = torch.clamp(y_pred * 4.0 + 1.0, 1.0, 5.0)
+        self._update_metrics(preds_denorm, targets, "train")
+        self.log("train_loss", loss, prog_bar=True)
+        
+        return loss
+    
+    def _compute_epsilon(self):
+        """Compute epsilon using moments accountant"""
+        if self.noise_scale == 0 or self.sample_rate is None:
+            return float('inf')
+            
         q = self.sample_rate
-        sigma = self.noise_multiplier
-
-        def compute_log_moment(alpha):
-            return alpha * (2 * q**2 * sigma**2) / (2 * sigma**2)
-
-        eps_min = float('inf')
-        for alpha in self.alphas:
-            log_moment = compute_log_moment(alpha)
-            eps = (log_moment + math.log(1 / self.delta)) / (alpha - 1)
-            if eps < eps_min:
-                eps_min = eps
-
-        self.privacy_budget = eps_min
-        self.log('privacy_epsilon', self.privacy_budget)
-
+        sigma = self.noise_scale
+        T = self.privacy_steps
+        
+        # Using analytic moments accountant
+        alpha = 1 + 1 / (sigma**2)
+        epsilon = (alpha * T * q**2 / (2 * sigma**2)) + (
+            math.log(1/self.delta) / (alpha - 1))
+        
+        return epsilon
+    
     def on_train_epoch_end(self):
-        super().on_train_epoch_end()
-        self.log('final_privacy_epsilon', self.privacy_budget)
+        """Log epoch-level metrics"""
+        super().on_train_epoch_end()  # Call parent's metric logging
+        if self.noise_scale > 0:
+            epsilon = self._compute_epsilon()
+            val_rmse = self.trainer.callback_metrics.get("val_rmse")  # or "val_rmse"
+            if val_rmse is not None:
+                self.metric_history.append(val_rmse.item())
+
+            self.log("epsilon", epsilon, prog_bar=True)

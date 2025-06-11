@@ -38,7 +38,8 @@ class DPModel(BaseModel):
         self.target_epsilon = target_epsilon
         self.privacy_engine = PrivacyEngine(accountant='rdp')
         self.dp_model = None  # Will be set in `on_train_start`
-
+        self.epsilon_history = []
+        self.metric_history = []  # AUC or RMSE depending on your use
     def on_train_start(self):
         if not self.enable_dp:
             return
@@ -72,4 +73,11 @@ class DPModel(BaseModel):
     def on_train_epoch_end(self):
         if self.enable_dp and hasattr(self, 'privacy_engine'):
             epsilon = self.privacy_engine.get_epsilon(self.target_delta)
+            self.epsilon_history.append(epsilon)
+
+            # Example: log AUC from validation
+            val_auc = self.trainer.callback_metrics.get("val_rmse")  # or "val_rmse"
+            if val_auc is not None:
+                self.metric_history.append(val_auc.item())
+
             self.log("epsilon", epsilon, prog_bar=True)
