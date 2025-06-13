@@ -5,12 +5,12 @@ model:
   init_args:
     num_users: 304398
     num_items: 17770
-    embed_dim: 64
+    embed_dim: 128
     loss_function: "MSE"  # Good choice, MSE is more stable than RMSE for training
     l2_penalty: 1e-4
     learning_rate: 1e-4
     dropout_rate: 0.3
-    noise_scale: 0.7
+    noise_scale: 0.1
     clip_norm: 1.0
     delta: 1e-5
     enable_dp: False

@@ -77,17 +77,14 @@ class BaseModel(pl.LightningModule):
         self.train_rmse = MeanSquaredError(squared=False)
         self.val_rmse = MeanSquaredError(squared=False)
         self.test_rmse = MeanSquaredError(squared=False)
-
+        
     def _get_loss_function(self, loss_function: str):
-        """Return the appropriate loss function"""
         if loss_function == "MSE":
-            return nn.MSELoss(reduction="none")
+            return nn.MSELoss()
         elif loss_function == "Huber":
-            return nn.SmoothL1Loss(reduction="none")
+            return nn.SmoothL1Loss()
         elif loss_function == "RMSE":
-            return lambda pred, target: torch.sqrt(nn.MSELoss(reduction="none")(pred, target))
-        raise ValueError(f"Unsupported loss function: {loss_function}")
-    
+            return lambda pred, target: torch.sqrt(nn.functional.mse_loss(pred, target, reduction="mean"))
 
 
     def forward(self, user_ids, item_ids):

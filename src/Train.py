@@ -98,7 +98,34 @@ def main():
         # Run normal test first (with standard model)
         cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
 
+        # Collect inputs and outputs during testing
+        user_indices = []
+        movie_indices = []
+        ratings = []
+        outputs = []
 
+        for batch in cli.datamodule.test_dataloader():
+            # Assuming the batch contains user indices and movie indices
+            user_idx, movie_idx = batch[:2]  # Adjust based on your dataloader structure
+            user_indices.append(user_idx)
+            movie_indices.append(movie_idx)
+
+            # Get model outputs
+            with torch.no_grad():
+                output = cli.model(user_idx, movie_idx)
+                outputs.append(output)
+
+            # Assuming ratings are derived from the model's output
+            rating = output  # Replace this with the actual logic to compute ratings
+            ratings.append(rating)
+
+        # Save the collected data
+        torch.save({
+            "user_idx": torch.cat(user_indices),
+            "movie_idx": torch.cat(movie_indices),
+            "ratings": torch.cat(ratings),
+            "model_outputs": torch.cat(outputs)
+        }, "blackbox_dataset.pt")
 
     if cli.config.do_predict:
         predictions = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
@@ -106,9 +133,9 @@ def main():
     if cli.config.do_analyze:
         # Load the MIA model checkpoint
         #mia_model = DPMembershipInferenceAttack.load_dp_checkpoint(
-        #    "lightning_logs/strong/dp_fm/giqhfsyr/checkpoints/epoch=3-step=10000.ckpt"
-        #)
-        mia_model = CustomMembershipInferenceAttack.load_from_checkpoint("lightning_logs/cus_str/dp_fm/74zissqm/checkpoints/epoch=39-step=6280.ckpt")
+           # "lightning_logs/strong/dp_fm/nnudexlz/checkpoints/epoch=3-step=10000.ckpt"
+       # )
+        mia_model = CustomMembershipInferenceAttack.load_from_checkpoint("lightning_logs/cus_str/dp_fm/8a7jwgzx/checkpoints/epoch=36-step=92500.ckpt")
 
         # Define the paths for your member and non-member datasets
         member_data_path = "netflix_data/netflix_data.hdf5"
