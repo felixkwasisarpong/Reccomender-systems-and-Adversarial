@@ -1,148 +1,148 @@
-from torch.utils.data import DataLoader, Dataset
-from opacus.data_loader import DPDataLoader
-from .NetflixDataset import NetflixDataset
-import pytorch_lightning as pl
-from typing import Optional
 import os
+from typing import Optional
 import torch
+import pytorch_lightning as pl
+from torch.utils.data import DataLoader, Subset
+from .NetflixDataset import NetflixDataset
+from torch.utils.data import Dataset
+try:
+    from opacus import PrivacyEngine
+    from opacus.utils.uniform_sampler import UniformWithReplacementSampler as DPDataLoader
+except ImportError:
+    DPDataLoader = None
 
+
+import os
+from typing import Optional
+import torch
+import pytorch_lightning as pl
+from torch.utils.data import DataLoader, random_split
+from .NetflixDataset import NetflixDataset
+
+try:
+    from opacus.utils.uniform_sampler import UniformWithReplacementSampler as DPDataLoader
+except ImportError:
+    DPDataLoader = None
 
 class NetflixDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        data_dir: str,
-        batch_size: int = 1024,
-        num_workers: int = 4,
-        max_samples: Optional[int] = None,
-        enable_dp: bool = False,
-        train_split_ratio: float = 0.9,
-        random_state: int = 42
-    ):
+    def __init__(self, data_dir: str, batch_size: int = 1024, num_workers: int = 4, max_samples: Optional[int] = None,        train_split_ratio: float = 0.8,
+        val_split_ratio: float = 0.1, random_state: int = 42, return_attrs: bool = True, enable_dp: bool = False):
         super().__init__()
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.max_samples = max_samples
-        self.enable_dp = enable_dp
         self.train_split_ratio = train_split_ratio
+        self.val_split_ratio = val_split_ratio
         self.random_state = random_state
-        self.train_dataset = None
-        self.val_dataset = None
-        self.test_dataset = None
-        self.member_dataset = None
-        self.nonmember_dataset = None
+        self.return_attrs = return_attrs
+        self.enable_dp = enable_dp
 
     def setup(self, stage: Optional[str] = None):
-        common_args = {
-            'max_samples': self.max_samples,
-            'random_state': self.random_state
-        }
+        full_dataset = NetflixDataset(
+            h5_path=os.path.join(self.data_dir, 'movielens_100k_with_attrs.hdf5'),
+            max_samples=self.max_samples,
+            random_state=self.random_state,
+            return_attrs=self.return_attrs,
+            mode='full'  # Load everything once
+        )
 
-        if stage == 'fit' or stage is None:
-            train_path = os.path.join(self.data_dir, "netflix_data.hdf5")
-            self.train_dataset = NetflixDataset(
-                h5_path=train_path,
-                mode='train',
-                split_ratio=self.train_split_ratio,
-                **common_args
-            )
-            self.val_dataset = NetflixDataset(
-                h5_path=train_path,  # Same file for validation split
-                mode='val',
-                split_ratio=self.train_split_ratio,
-                **common_args
-            )
-        
-        if stage == 'test' or stage is None:
-            test_path = os.path.join(self.data_dir, "movies.hdf5")
-            self.test_dataset = NetflixDataset(
-                h5_path=test_path,
-                mode='test',
-                **common_args
-            )
+        # Compute lengths
+        total_len = len(full_dataset)
+        train_len = int(self.train_split_ratio * total_len)
+        val_len = int(self.val_split_ratio * total_len)
+        test_len = total_len - train_len - val_len
 
-    def setup_mia(self, member_dir: str, nonmember_dir: str):
-        """Setup for MIA analysis with member and non-member datasets."""
-        self.member_dataset = NetflixDataset(member_dir, mode="train")
-        self.nonmember_dataset = NetflixDataset(nonmember_dir, mode="test")
+        # Split dataset deterministically
+        self.train_dataset, self.val_dataset, self.test_dataset = random_split(
+            full_dataset,
+            [train_len, val_len, test_len],
+            generator=torch.Generator().manual_seed(self.random_state)
+        )
 
+        # Predict dataset is completely separate
+        self.predict_dataset = NetflixDataset(
+            h5_path=os.path.join(self.data_dir, 'movielens_1m_with_attrs.hdf5'),
+            max_samples=None,
+            random_state=self.random_state,
+            return_attrs=self.return_attrs,
+            mode='predict'
+        )
+
+        if stage == "attack":
+            attack_full_path = os.path.join(self.data_dir, 'DP_weak.hdf5')
+            attack_dataset = NetflixDataset(
+                h5_path=attack_full_path,
+                max_samples=self.max_samples,
+                random_state=self.random_state,
+                return_attrs=self.return_attrs,
+                mode='full'
+            )
+            self.attack_dataset = WGANInputDataset(attack_dataset)
     def train_dataloader(self):
-        loader_args = {
-            'batch_size': self.batch_size,
-            'num_workers': self.num_workers,
-            'pin_memory': True,
-            'persistent_workers': self.num_workers > 0
-        }
-
         if self.enable_dp:
+            assert DPDataLoader is not None, "Opacus must be installed for DP training."
             return DPDataLoader(
                 dataset=self.train_dataset,
-                sample_rate=self.batch_size/len(self.train_dataset),
+                sample_rate=self.batch_size / len(self.train_dataset),
                 num_workers=self.num_workers,
                 pin_memory=True,
-                generator=torch.Generator().manual_seed(self.random_state))
+                persistent_workers=True,
+                generator=torch.Generator().manual_seed(self.random_state)
+            )
         else:
             return DataLoader(
                 dataset=self.train_dataset,
+                batch_size=self.batch_size,
                 shuffle=True,
-                **loader_args)
+                num_workers=self.num_workers,
+                pin_memory=True,
+                persistent_workers=True
+            )
 
     def val_dataloader(self):
-        return DataLoader(
-            dataset=self.val_dataset,
-            batch_size=self.batch_size*2,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers,persistent_workers=True)
 
     def test_dataloader(self):
-        return DataLoader(
-            dataset=self.test_dataset,
-            batch_size=self.batch_size*2,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers,persistent_workers=True)
 
-    def member_dataloader(self):
-        """Dataloader for member dataset."""
+    def predict_dataloader(self):
+        return DataLoader(self.predict_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+
+
+
+    def attack_dataloader(self):
         return DataLoader(
-            dataset=self.member_dataset,
+            self.attack_dataset,
             batch_size=self.batch_size,
-            shuffle=False,
+            shuffle=True,
             num_workers=self.num_workers,
-            pin_memory=True
+            pin_memory=True,
+            persistent_workers=True
         )
 
-    def nonmember_dataloader(self):
-        """Dataloader for non-member dataset."""
-        return DataLoader(
-            dataset=self.nonmember_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True
-        )
 
-    def get_num_users(self):
-        return self.train_dataset.get_num_users()
 
-    def get_num_movies(self):
-        return self.train_dataset.get_num_movies()
-    
-
-    def mia_dataloaders(self, member_dir, nonmember_dir):
-        member_ds    = NetflixDataset(member_dir,    mode="train")
-        nonmember_ds = NetflixDataset(nonmember_dir, mode="test")
+    def mia_dataloaders(self, member_path, nonmember_path):
+        member_ds = NetflixDataset(member_path, mode='train', return_attrs=self.return_attrs)
+        nonmember_ds = NetflixDataset(nonmember_path, mode='test', return_attrs=self.return_attrs)
 
         mia_ds = MIADataset(member_ds, nonmember_ds)
-        mia_loader = DataLoader(
-            mia_ds,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers
-        )
-        return [mia_loader]    # list of length 1
+        return [
+            DataLoader(
+                mia_ds,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.num_workers,
+                pin_memory=True
+            )
+        ]
 
+    def get_num_users(self):
+        return self.train_dataset.dataset.get_num_users()
+
+    def get_num_movies(self):
+        return self.train_dataset.dataset.get_num_movies()
 
 
 class MIADataset(torch.utils.data.Dataset):
@@ -157,9 +157,49 @@ class MIADataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         if idx < self.len_m:
-            u, i, r = self.member_ds[idx]
+            data = self.member_ds[idx]
             label = 1
         else:
-            u, i, r = self.nonmember_ds[idx - self.len_m]
+            data = self.nonmember_ds[idx - self.len_m]
             label = 0
-        return u, i, r, torch.tensor(label, dtype=torch.float32)
+
+        # Always include these
+        example = {
+            'user_id': data['user_id'],
+            'item_id': data['item_id'],
+            'rating': data['rating'],
+            'label': torch.tensor(label, dtype=torch.float32)
+        }
+
+        # Always include attrs if return_attrs is True
+        if 'gender' in data:
+            example['gender'] = data['gender']
+            example['age'] = data['age']
+            example['occupation'] = data['occupation']
+            example['genre'] = data['genre']
+
+        return example
+    
+class WGANInputDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset):
+        self.base_dataset = base_dataset
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        item = self.base_dataset[idx]
+
+        user_id    = item['user_id'].float().unsqueeze(0) / 6000       # ✅ if max user_id < 6000
+        item_id    = item['item_id'].float().unsqueeze(0) / 4000       # ✅ if max item_id < 4000
+        gender     = item['gender'].float().unsqueeze(0)               # ✅ already binary
+        age        = item['age'].unsqueeze(0) / 100                    # ✅ assume age < 100
+        occupation = item['occupation'].float().unsqueeze(0) / 20      # ✅ assume occ < 20
+        genre      = item['genre']                                     # ✅ already in [0, 1]
+        rating     = item['rating'].unsqueeze(0) / 5.0                 # ✅ if original ratings in [1, 5]
+
+        full_vec = torch.cat([
+            user_id, item_id, gender, age, occupation, genre, rating
+        ], dim=0)
+
+        return full_vec

@@ -3,17 +3,27 @@ seed_everything: 0
 model:
   class_path: models.DPModel
   init_args:
-    num_users: 480189
-    num_items: 17770
-    embed_dim: 128
-    loss_function: "MSE"
-    l2_penalty: 1e-4
-    dropout_rate: 0.3
-    max_grad_norm: 1.0
-    target_delta: 1e-6
-    target_epsilon: 3.0
+    num_users:     478615
+    num_items:     17470
+    num_genders:   2
+    num_occupations: 21
+    genre_dim:     19
+    embed_dim:     16
+    mlp_dims:      [128, 64]
+    dropout:       0.3
+    learning_rate: 1e-3
+    l2_penalty:    1e-3
+    loss_function: "Huber"
+    target_min:    1.0
+    target_max:    5.0
+    use_attrs:     true
 
-    enable_dp: true
+    # DP args
+    enable_dp:      true
+    target_epsilon: 1.20    # or 1.0, 5.0 for other regimes
+    target_delta:   1e-5
+    max_grad_norm:  1.0
+
 
 do_train: true
 do_test: true

@@ -1,0 +1,32 @@
+seed_everything: 0
+
+model:
+  class_path: models.CustomDP_SGD
+  init_args:
+    num_users: 478615
+    num_items: 17470
+    embed_dim: 16            # replace with dataset.get_vocab_sizes()['num_items']
+    num_genders: 2               # typically 0 (F), 1 (M)
+    num_occupations: 21          # number of unique occupation categories
+    genre_dim: 19
+    use_attrs: true                # from genre_onehot shape
+    enable_dp: false
+    noise_type: "gaussian"  # Options: "gaussian", "laplace"
+    mlp_dims: [128, 64]
+    dropout: 0.3
+    learning_rate: 1e-3
+    l2_penalty: 1e-3
+    loss_function: "Huber"
+    target_min: 1.0
+    target_max: 5.0
+    noise_scale: 0.54
+    clip_norm: 1.0
+    delta: 1e-5
+
+# Lightning execution flow flags
+do_train: true
+do_test: true
+do_predict: false
+do_validate: true  # Important for DP monitoring
+do_analyze: false
+

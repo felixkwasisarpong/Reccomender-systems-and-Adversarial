@@ -1,131 +1,176 @@
+import math, time
+import numpy as np
+import matplotlib.pyplot as plt
 import torch
-import math
+import torch.nn.functional as F
 import wandb
-import torch.nn as nn
-import pytorch_lightning as pl
-from torchmetrics import MeanSquaredError, MeanAbsoluteError
 from .BaseModel import BaseModel
+import seaborn as sns
+
 class CustomDP_SGD(BaseModel):
     def __init__(
         self,
-        num_users: int,
-        num_items: int,
-        embed_dim: int = 64,
-        learning_rate: float = 1e-3,
-        loss_function: str = "RMSE",
-        l2_penalty: float = 1e-4,
-        dropout_rate: float = 0.2,
-        noise_scale: float = 0.0,      # DP parameter
-        clip_norm: float = 1.0,        # DP parameter
-        delta: float = 1e-5,           # DP parameter
-        log_freq: int = 50,
-        enable_dp=True
-                    # Logging frequency
+        num_users,
+        num_items,
+        noise_type='gaussian',
+        noise_scale=0.0,
+        enable_dp=False,
+        use_attrs=True,
+        clip_norm=1.0,
+        delta=1e-5,
+        log_freq=50,
+        **kwargs
     ):
-        """
-        Differentially Private Recommendation Model
-        
-        Args:
-            noise_scale: Noise multiplier for DP (σ)
-            clip_norm: Gradient clipping norm (C)
-            delta: Privacy parameter (δ)
-            log_freq: Frequency of WandB logging (in batches)
-        """
-        super().__init__(
-            num_users=num_users,
-            num_items=num_items,
-            embed_dim=embed_dim,
-            learning_rate=learning_rate,
-            loss_function=loss_function,
-            l2_penalty=l2_penalty,
-            dropout_rate=dropout_rate,
-            enable_dp=False  # Indicate we're using DP
-        )
-        
-        # DP-specific parameters
+        super().__init__(num_users=num_users, num_items=num_items, use_attrs=use_attrs, **kwargs)
+        self.noise_type = noise_type
         self.noise_scale = noise_scale
         self.clip_norm = clip_norm
         self.delta = delta
+        self.log_freq = log_freq
+        self.epsilon_history = []
+        self.metric_history = []
         self.privacy_steps = 0
         self.sample_rate = None
-        self.log_freq = log_freq
         self.automatic_optimization = False
-        self.epsilon_history = []
-        self.metric_history = []  # AUC or RMSE depending on your use
 
     def on_train_start(self):
-        """Initialize sample rate when training begins"""
-        if self.trainer.train_dataloader is not None:
-            batch_size = self.trainer.train_dataloader.batch_size
-            self.sample_rate = batch_size / self.hparams.num_users
-            self.log("sample_rate", self.sample_rate)
-    
-    def configure_dataloader(self, batch_size: int):
-        """Set the sample rate for DP accounting"""
-        self.sample_rate = batch_size / self.hparams.num_users
+        batch_size = self.trainer.train_dataloader.batch_size
+        self.sample_rate = batch_size / len(self.trainer.datamodule.train_dataset)
 
-    
     def training_step(self, batch, batch_idx):
-        # Forward pass and loss calculation
-        user_ids, item_ids, targets = batch
-        targets_norm = (targets - 1.0) / 4.0
-        y_pred = self(user_ids, item_ids)
-        loss = self.loss_fn(y_pred, targets_norm).mean()
-        
-        # Backward pass
-        self.optimizers().zero_grad()
-        self.manual_backward(loss)
-        
-        # DP modifications
-        if self.noise_scale > 0:
-            # 1. Clip gradients
-            torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_norm)
-            
-            # 2. Add noise
-            for param in self.parameters():
-                if param.grad is not None:
-                    noise = torch.randn_like(param.grad) * self.noise_scale * self.clip_norm
-                    param.grad += noise
-            
-            # 3. Update privacy accounting
-            self.privacy_steps += 1
-            current_epsilon = self._compute_epsilon()
-            
-            self.log("train/epsilon", current_epsilon, prog_bar=True)
-        
-        # Update parameters
-        self.optimizers().step()
-        
-        # Update metrics
-        preds_denorm = torch.clamp(y_pred * 4.0 + 1.0, 1.0, 5.0)
-        self._update_metrics(preds_denorm, targets, "train")
-        self.log("train_loss", loss, prog_bar=True)
-        
-        return loss
-    
-    def _compute_epsilon(self):
-        """Compute epsilon using moments accountant"""
-        if self.noise_scale == 0 or self.sample_rate is None:
-            return float('inf')
-            
-        q = self.sample_rate
-        sigma = self.noise_scale
-        T = self.privacy_steps
-        
-        # Using analytic moments accountant
-        alpha = 1 + 1 / (sigma**2)
-        epsilon = (alpha * T * q**2 / (2 * sigma**2)) + (
-            math.log(1/self.delta) / (alpha - 1))
-        
-        return epsilon
-    
-    def on_train_epoch_end(self):
-        """Log epoch-level metrics"""
-        super().on_train_epoch_end()  # Call parent's metric logging
-        if self.noise_scale > 0:
-            epsilon = self._compute_epsilon()
-            val_rmse = self.trainer.callback_metrics.get("val_rmse")  # or "val_rmse"
-            if val_rmse is not None:
-                self.metric_history.append(val_rmse.item())
+        optimizer = self.optimizers()
+        optimizer.zero_grad()
 
-            self.log("epsilon", epsilon, prog_bar=True)
+        preds = self(batch)
+        targets = batch["rating"]
+        loss = self.loss_fn(preds, targets)
+
+        # manual backward
+        self.manual_backward(loss)
+
+        # clip gradients
+        torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_norm)
+
+        # Add noise if enabled
+        if self.noise_scale > 0:
+            for p in self.parameters():
+                if p.grad is not None:
+                    if self.noise_type == 'gaussian':
+                        noise = torch.randn_like(p.grad)
+                    else:
+                        noise = torch.distributions.Laplace(0, 1).sample(p.grad.shape).to(p.grad.device)
+                    p.grad += noise * self.noise_scale * self.clip_norm
+            self.privacy_steps += 1
+
+        optimizer.step()
+
+        # metrics
+        self.train_mse.update(preds, targets)
+        self.train_mae.update(preds, targets)
+        self.train_rmse.update(preds, targets)
+
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        return loss
+
+    def on_validation_epoch_end(self):
+        val_rmse = self.trainer.callback_metrics.get("val_rmse")
+        if val_rmse is not None:
+            self.metric_history.append(val_rmse.item())
+        super().on_validation_epoch_end()
+
+    def on_train_epoch_end(self):
+        if self.noise_scale > 0 and self.sample_rate is not None:
+            if self.noise_type == 'gaussian':
+                orders = np.arange(2, 64)
+                rdp = self.compute_rdp_gaussian(
+                    q=self.sample_rate,
+                    noise_multiplier=self.noise_scale,
+                    steps=self.privacy_steps,
+                    orders=orders
+                )
+                eps, opt_order = self.get_privacy_spent_rdp(orders, rdp, self.delta)
+            elif self.noise_type == 'laplace':
+                eps = self.compute_eps_laplace_subsampled(
+                    q=self.sample_rate,
+                    noise_scale=self.noise_scale,
+                    steps=self.privacy_steps
+                )
+                opt_order = None  # Not needed for Laplace
+            else:
+                raise ValueError(f"Unsupported noise type: {self.noise_type}")
+
+            self.epsilon_history.append(eps)
+            self.log("epsilon", eps, prog_bar=True)
+            print(f"[{self.noise_type.upper()}] ε={eps:.4f} at δ={self.delta}, α={opt_order if opt_order else 'N/A'}")
+
+        super().on_train_epoch_end()
+
+
+
+    def on_train_end(self):
+        n = min(len(self.epsilon_history), len(self.metric_history))
+        if n > 0:
+            sns.set(style="whitegrid", palette="muted", font_scale=1.2)
+            plt.figure(figsize=(8, 5))
+
+            plt.plot(
+                self.epsilon_history[:n],
+                self.metric_history[:n],
+                marker='o',
+                linestyle='-',
+                linewidth=2,
+                markersize=7,
+                color='#1f77b4',
+                label='Validation RMSE'
+            )
+
+            plt.xlabel('Epsilon (ε)', fontsize=12)
+            plt.ylabel('Validation RMSE', fontsize=12)
+            plt.title('Privacy–Utility Trade-off Curve', fontsize=14)
+            plt.grid(True, which='both', linestyle='--', linewidth=0.6, alpha=0.7)
+            plt.legend()
+            plt.tight_layout()
+
+            fname = f"privacy_tradeoff_{int(time.time())}.png"
+            plt.savefig(fname, dpi=300)
+            wandb.save(fname)
+            plt.close()
+
+    @staticmethod
+    def compute_rdp_gaussian(q, noise_multiplier, steps, orders):
+        rdp = []
+        for alpha in orders:
+            if q == 0 or noise_multiplier == 0:
+                rdp.append(0 if q == 0 else float('inf'))
+            else:
+                # Tight RDP bound for subsampled Gaussian (Wang et al. 2019)
+                sigma = noise_multiplier
+                term1 = alpha / (2 * sigma**2)
+                term2 = math.log(1 + q**2 * (alpha - 1) / alpha)
+                term3 = math.log(1 + q * (alpha - 1) / (alpha - 1))
+                rdp_val = term1 * q**2 + min(term2, term3)
+                rdp.append(rdp_val)
+        return np.array(rdp) * steps
+
+    @staticmethod
+    def get_privacy_spent_rdp(orders, rdp, delta):
+        eps = rdp - math.log(delta) / (np.array(orders) - 1)
+        idx = np.argmin(eps)
+        return eps[idx], orders[idx]
+
+    @staticmethod
+    def compute_eps_laplace(noise_scale, steps):
+        # Laplace mechanism ε-composition: ε = T / noise_scale
+        return steps / noise_scale
+    
+    @staticmethod
+    def compute_eps_laplace_subsampled(q, noise_scale, steps):
+        """
+        Computes ε for Laplace mechanism with Poisson subsampling.
+        Based on: https://arxiv.org/abs/1212.1987 (Theorem 4.1)
+        """
+        if noise_scale == 0:
+            return float('inf')
+        # ε = log(1 + q * (exp(1/noise_scale) - 1)) * steps
+        eps_per_step = math.log(1 + q * (math.exp(1 / noise_scale) - 1))
+        return eps_per_step * steps

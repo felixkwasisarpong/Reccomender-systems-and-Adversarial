@@ -1,4 +1,4 @@
-accelerator: cpu
+accelerator: gpu
 strategy: auto
 devices: 1
 num_nodes: 1
@@ -15,6 +15,7 @@ callbacks:
     init_args:
       monitor: val_loss
       mode: min
+
 fast_dev_run: false
 max_epochs: 2
 min_epochs: -1
@@ -32,8 +33,8 @@ num_sanity_val_steps: null
 log_every_n_steps: null
 enable_checkpointing: null
 enable_progress_bar: true
-enable_model_summary: null
-accumulate_grad_batches: 1
+enable_model_summary: true
+
 gradient_clip_val: null
 gradient_clip_algorithm: null
 deterministic: warn

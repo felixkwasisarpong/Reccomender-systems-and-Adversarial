@@ -3,88 +3,152 @@ import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
+import matplotlib.pyplot as plt
+import seaborn as sns
+import torch.nn as nn
+import pytorch_lightning as pl
+from torchmetrics import MeanSquaredError, MeanAbsoluteError
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+ 
 class NetflixDataset(Dataset):
-    def __init__(self, h5_path, mode='train', max_samples=None, split_ratio=0.9, random_state=42):
-        """
-        Args:
-            h5_path: Path to HDF5 file
-            mode: 'train', 'val', or 'test'
-            max_samples: Optional limit on samples
-            split_ratio: Ratio of training data (only used for train/val modes)
-            random_state: Random seed for reproducibility
-        """
+    def __init__(
+        self,
+        h5_path,
+        mode='train',
+        max_samples=None,
+        split_ratio=0.9,
+        random_state=42,
+        return_attrs: bool = True,
+        plot_eda: bool = False,
+        eda_out_dir: str = "./eda"
+    ):
         super().__init__()
         self.h5_path = h5_path
         self.mode = mode
         self.max_samples = max_samples
         self.split_ratio = split_ratio
         self.random_state = random_state
+        self.return_attrs = return_attrs
+        self.plot_eda = plot_eda
+        self.eda_out_dir = eda_out_dir
 
-        # Load data from HDF5
+        # with h5py.File(self.h5_path, 'r') as file:
+        #     self.global_mean = float(file.attrs.get('global_mean', 0.0))
+        #     self.user_ids_all = file['user_ids'][:].astype(np.int64)
+        #     self.movie_ids_all = file['item_ids'][:].astype(np.int32)
+        #     self.ratings_all = file['ratings'][:].astype(np.float32)
+
+        #     self.has_attrs = all(key in file for key in ['gender', 'age', 'occupation', 'genre_onehot'])
+        #     if self.has_attrs:
+        #         self.gender_all = file['gender'][:]
+        #         self.age_all = file['age'][:]
+        #         self.occupation_all = file['occupation'][:]
+        #         self.genre_all = file['genre_onehot'][:]
         with h5py.File(self.h5_path, 'r') as file:
-            self.global_mean = float(file.attrs.get('global_mean', 0.0))
-            self.num_ratings = int(file.attrs.get('num_ratings', 0))
-            
-            ratings = file['ratings']
-            user_ids = ratings['user_id'][:].astype(np.int64)
-            movie_ids = ratings['movie_id'][:].astype(np.int32)
-            ratings = ratings['rating'][:].astype(np.float32)
+            if 'predictions' in file:
+                print("gets here")
+                # Structured array format (like cus_weak.hdf5)
+                preds = file['predictions']
+                self.user_ids_all = preds['user_id'][:].astype(np.int64)
+                self.movie_ids_all = preds['movie_id'][:].astype(np.int32)
+                self.ratings_all = preds['pred_rating'][:].astype(np.float32)
+                self.gender_all = preds['gender'][:].astype(np.int64)
+                self.age_all = preds['age'][:].astype(np.float32)
+                self.occupation_all = preds['occupation'][:].astype(np.int64)
+                self.genre_all = preds['genre'][:].astype(np.float32)
+                self.has_attrs = True
+            else:
+                # Flat layout (like movielens_100k_with_attrs.hdf5)
+                self.user_ids_all = file['user_ids'][:].astype(np.int64)
+                self.movie_ids_all = file['item_ids'][:].astype(np.int32)
+                self.ratings_all = file['ratings'][:].astype(np.float32)
+                if all(k in file for k in ['gender', 'age', 'occupation', 'genre_onehot']):
+                    self.gender_all = file['gender'][:].astype(np.int64)
+                    self.age_all = file['age'][:].astype(np.float32)
+                    self.occupation_all = file['occupation'][:].astype(np.int64)
+                    self.genre_all = file['genre_onehot'][:].astype(np.float32)
+                    self.has_attrs = True
+                else:
+                    self.has_attrs = False
 
-        # Create mappings
-        self.users = np.unique(user_ids)
-        self.movies = np.unique(movie_ids)
-        self.user2idx = {uid: idx for idx, uid in enumerate(self.users)}
-        self.movie2idx = {mid: idx for idx, mid in enumerate(self.movies)}
 
-        # Handle splits differently for test vs train/val
-        if mode == 'test':
-            # Use all test data as-is
-            self.indices = np.arange(len(user_ids))
-        else:
-            # Split train/val data
-            rng = np.random.default_rng(self.random_state)
-            indices = np.arange(len(user_ids))
-            rng.shuffle(indices)
+        indices = np.arange(len(self.user_ids_all))
+        rng = np.random.default_rng(self.random_state)
+        rng.shuffle(indices)
+
+        if self.mode == 'train':
             split_idx = int(len(indices) * self.split_ratio)
-            self.indices = indices[:split_idx] if mode == 'train' else indices[split_idx:]
+            indices = indices[:split_idx]
+        elif self.mode == 'val':
+            split_idx = int(len(indices) * self.split_ratio)
+            indices = indices[split_idx:]
 
-        # Apply indices
-        self.user_ids = user_ids[self.indices]
-        self.movie_ids = movie_ids[self.indices]
-        self.ratings = ratings[self.indices]
+        if max_samples is not None and max_samples > 0:
+            indices = indices[:max_samples]
 
-        # Subsample if requested
-        if self.max_samples is not None and self.max_samples > 0:
-            rng = np.random.default_rng(self.random_state)
-            sample_size = min(self.max_samples, len(self.user_ids))
-            sample_indices = rng.choice(len(self.user_ids), size=sample_size, replace=False)
-            self.user_ids = self.user_ids[sample_indices]
-            self.movie_ids = self.movie_ids[sample_indices]
-            self.ratings = self.ratings[sample_indices]
+        self.user_ids = self.user_ids_all[indices]
+        self.movie_ids = self.movie_ids_all[indices]
+        self.ratings = self.ratings_all[indices]
 
-        self._log_stats()
+        if self.has_attrs:
+            self.genders = self.gender_all[indices]
+            self.ages = self.age_all[indices]
+            self.occupations = self.occupation_all[indices]
+            self.genres = self.genre_all[indices]
+
+        self.user2idx = {uid: idx for idx, uid in enumerate(np.unique(self.user_ids_all))}
+        self.movie2idx = {mid: idx for idx, mid in enumerate(np.unique(self.movie_ids_all))}
+        self.user_ids = np.array([self.user2idx[uid] for uid in self.user_ids], dtype=np.int64)
+        self.movie_ids = np.array([self.movie2idx[mid] for mid in self.movie_ids], dtype=np.int64)
 
     def __getitem__(self, idx):
-        return (
-            torch.tensor(self.user2idx[self.user_ids[idx]], dtype=torch.int64),
-            torch.tensor(self.movie2idx[self.movie_ids[idx]], dtype=torch.int64),
-            torch.tensor(self.ratings[idx], dtype=torch.float32)
-        )
+        return {
+            'user_id': torch.tensor(self.user_ids[idx], dtype=torch.long),
+            'item_id': torch.tensor(self.movie_ids[idx], dtype=torch.long),
+            'gender': torch.tensor(self.genders[idx], dtype=torch.long),
+            'age': torch.tensor(self.ages[idx], dtype=torch.float32),
+            'occupation': torch.tensor(self.occupations[idx], dtype=torch.long),
+            'genre': torch.tensor(self.genres[idx], dtype=torch.float32),
+            'rating': torch.tensor(self.ratings[idx], dtype=torch.float32),
+        }
 
     def __len__(self):
         return len(self.user_ids)
 
-    def _log_stats(self):
-        print(f"\n[Dataset {self.mode}]")
-        print(f"  File: {os.path.basename(self.h5_path)}")
-        print(f"  Samples: {len(self.user_ids):,}")
-        print(f"  Unique users: {len(self.users):,}")
-        print(f"  Unique movies: {len(self.movies):,}")
-        print(f"  Global mean: {self.global_mean:.2f}")
+    def get_vocab_sizes(self):
+        return {
+            'num_users': len(self.user2idx),
+            'num_items': len(self.movie2idx),
+            'num_genders': int(self.genders.max()) + 1,
+            'num_occupations': int(self.occupations.max()) + 1,
+            'genre_dim': self.genres.shape[1],
+        }
 
-    def get_num_users(self):
-        return len(self.users)
+    @staticmethod
+    def plot_combined_eda(user_ids, movie_ids, ratings, out_path="training.png"):
+        sns.set(style="whitegrid")
+        fig, axs = plt.subplots(2, 2, figsize=(12, 8))
 
-    def get_num_movies(self):
-        return len(self.movies)
+        sns.histplot(ratings, bins=5, kde=False, ax=axs[0, 0])
+        axs[0, 0].set_title("Ratings Distribution")
+        axs[0, 0].set_xlabel("Rating")
+        axs[0, 0].set_ylabel("Count")
+
+        user_counts = np.bincount(user_ids)
+        axs[0, 1].hist(user_counts[user_counts > 0], bins=50, log=True)
+        axs[0, 1].set_title("User Activity (log)")
+        axs[0, 1].set_xlabel("# Ratings per User")
+
+        movie_counts = np.bincount(movie_ids)
+        axs[1, 0].hist(movie_counts[movie_counts > 0], bins=50, log=True)
+        axs[1, 0].set_title("Movie Popularity (log)")
+        axs[1, 0].set_xlabel("# Ratings per Movie")
+
+        axs[1, 1].hist(np.unique(user_ids), bins=100)
+        axs[1, 1].set_title("Unique User ID Distribution")
+        axs[1, 1].set_xlabel("User ID Index")
+
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=300)
+        plt.close()
+        print(f"\U0001f4ca Saved combined EDA plot to {out_path}")

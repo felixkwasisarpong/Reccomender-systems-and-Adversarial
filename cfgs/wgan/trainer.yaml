@@ -13,8 +13,15 @@ logger:
 callbacks: 
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
-      monitor: val_loss
+      monitor: gen_loss
       mode: min
+  - class_path: pytorch_lightning.callbacks.EarlyStopping
+    init_args:
+      monitor: gen_loss
+      mode: min
+      patience: 20
+      min_delta: 1e-4
+      verbose: true
 fast_dev_run: false
 max_epochs: 2
 min_epochs: -1

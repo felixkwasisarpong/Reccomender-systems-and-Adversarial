@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 from typing import Optional, Dict, List
 from dataloader.NetflixPredictor import NetflixPredictor
 from dataloader.NetflixDataset import NetflixDataset
+import numpy as np
 
 class NetflixPredictor:
     def __init__(self, dataset: NetflixDataset):

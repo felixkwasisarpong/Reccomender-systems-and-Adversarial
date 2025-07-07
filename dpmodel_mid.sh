@@ -22,3 +22,7 @@ conda activate wildfire
 
 # Run the script
 python src/Train.py --config=cfgs/dp_model_mid/db_FM.yaml --trainer=cfgs/dp_model_mid/dp_model_trainer.yaml --data=cfgs/data_loader.yaml --seed_everything=0 --trainer.max_epochs=20 --do_test=True --data.data_dir netflix_data
+
+#python src/Train.py --config=cfgs/dp_model_mid/db_FM.yaml --trainer=cfgs/dp_model_mid/dp_model_trainer.yaml --data=cfgs/data_loader.yaml --seed_everything=0 --trainer.max_epochs=20 --do_analyze=True --do_train=False --do_validate=False --do_test=False --data.data_dir netflix_data
+
+#python src/Train.py --config=cfgs/dp_model_mid/db_FM.yaml --trainer=cfgs/dp_model_mid/dp_model_trainer.yaml --data=cfgs/data_loader.yaml --seed_everything=0 --trainer.max_epochs=20 --do_predict=True --do_train=False --do_validate=False --do_test=False --data.data_dir netflix_data

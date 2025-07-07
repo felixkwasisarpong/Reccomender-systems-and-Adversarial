@@ -1,83 +1,116 @@
-
-from .BaseModel import BaseModel
+import time
+import matplotlib.pyplot as plt
 import torch
+from torch.optim import AdamW
 from opacus import PrivacyEngine
-from .BaseModel import BaseModel
-import torch
-
-
-import torch
-import torch.nn as nn
+import pytorch_lightning as pl
+from torchmetrics import MeanSquaredError, MeanAbsoluteError
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from .BaseModel import BaseModel  # adjust import
 from torch.optim import Adam
-from opacus import PrivacyEngine
-
-class CoreDPModule(nn.Module):
-    def __init__(self, user_embedding, item_embedding, dropout, fc):
-        super().__init__()
-        self.user_embedding = user_embedding
-        self.item_embedding = item_embedding
-        self.dropout = nn.Dropout(dropout)
-        self.fc = fc
-
-    def forward(self, user_ids, item_ids):
-        user_embed = self.user_embedding(user_ids)
-        item_embed = self.item_embedding(item_ids)
-        x = torch.cat([user_embed, item_embed], dim=1)
-        x = self.dropout(x)
-        return self.fc(x).squeeze()
 
 class DPModel(BaseModel):
-    def __init__(self, noise_multiplier=1.0, max_grad_norm=1.0, target_delta=1e-5, target_epsilon=1.0, dropout_rate=0.3, enable_dp=True, **kwargs):
-        super().__init__(**kwargs)
-        self.save_hyperparameters()
-        self.enable_dp = enable_dp
-        self.dropout_rate = dropout_rate
-        self.noise_multiplier = noise_multiplier
-        self.max_grad_norm = max_grad_norm
-        self.target_delta = target_delta
+    def __init__(
+        self,
+        # —— all your BaseModel args —— 
+        num_users: int,
+        num_items: int,
+        num_genders: int,
+        num_occupations: int,
+        genre_dim: int,
+        embed_dim: int = 16,
+        mlp_dims: list = [128, 64],
+        dropout: float = 0.2,
+        learning_rate: float = 1e-3,
+        l2_penalty: float = 1e-4,
+        loss_function: str = "Huber",
+        target_min: float = 1.0,
+        target_max: float = 5.0,
+        use_attrs: bool = True,
+        # —— DP-specific args ——
+        enable_dp: bool = False,
+        target_epsilon: float = 1.0,
+        target_delta: float = 1e-5,
+        max_grad_norm: float = 1.0,
+        **kwargs
+    ):
+        super().__init__(
+            num_users=num_users,
+            num_items=num_items,
+            num_genders=num_genders,
+            num_occupations=num_occupations,
+            genre_dim=genre_dim,
+            embed_dim=embed_dim,
+            mlp_dims=mlp_dims,
+            dropout=dropout,
+            learning_rate=learning_rate,
+            l2_penalty=l2_penalty,
+            loss_function=loss_function,
+            target_min=target_min,
+            target_max=target_max,
+            use_attrs=use_attrs,
+            **kwargs
+        )
+        self.enable_dp      = enable_dp
         self.target_epsilon = target_epsilon
-        self.privacy_engine = PrivacyEngine(accountant='rdp')
-        self.dp_model = None  # Will be set in `on_train_start`
+        self.target_delta   = target_delta
+        self.max_grad_norm  = max_grad_norm
+        self.privacy_engine = PrivacyEngine()
         self.epsilon_history = []
-        self.metric_history = []  # AUC or RMSE depending on your use
+        self.metric_history  = []
+        self.privacy_engine = PrivacyEngine(accountant='rdp')
+
+
     def on_train_start(self):
         if not self.enable_dp:
             return
 
-        train_loader = self.trainer.train_dataloader
+        train_loader = self.trainer.datamodule.train_dataloader()
         optimizer = self.trainer.optimizers[0]
 
-        # Extract the actual model layers
-        self.dp_model = CoreDPModule(self.user_embedding, self.item_embedding, self.dropout_rate, self.fc)
-
-        dp_optimizer = Adam(self.dp_model.parameters(), lr=optimizer.param_groups[0]["lr"])
-
-        # Attach privacy engine
-        self.dp_model, dp_optimizer, _ = self.privacy_engine.make_private_with_epsilon(
-            module=self.dp_model,
-            optimizer=dp_optimizer,
+        # Wrap self in-place (do not assign back to self)
+        _, dp_optimizer, _ = self.privacy_engine.make_private_with_epsilon(
+            module=self,
+            optimizer=optimizer,
             data_loader=train_loader,
-            max_grad_norm=self.max_grad_norm,
-            target_delta=self.target_delta,
+            epochs=self.trainer.max_epochs,
             target_epsilon=self.target_epsilon,
-            epochs=self.trainer.max_epochs
+            target_delta=self.target_delta,
+            max_grad_norm=self.max_grad_norm,
         )
 
         self.trainer.optimizers = [dp_optimizer]
 
-    def forward(self, user_ids, item_ids):
-        if self.enable_dp and self.dp_model is not None:
-            return self.dp_model(user_ids, item_ids)
-        return super().forward(user_ids, item_ids)
+    def forward(self, batch):
+        return super().forward(batch)
+    
+
+
 
     def on_train_epoch_end(self):
-        if self.enable_dp and hasattr(self, 'privacy_engine'):
-            epsilon = self.privacy_engine.get_epsilon(self.target_delta)
-            self.epsilon_history.append(epsilon)
+        if self.enable_dp:
+            try:
+                eps = self.privacy_engine.get_epsilon(self.target_delta)
+                rmse = self.trainer.callback_metrics.get("val_rmse")
 
-            # Example: log AUC from validation
-            val_auc = self.trainer.callback_metrics.get("val_rmse")  # or "val_rmse"
-            if val_auc is not None:
-                self.metric_history.append(val_auc.item())
+                # Only log when both epsilon and val_rmse are available
+                if rmse is not None:
+                    self.epsilon_history.append(eps)
+                    self.metric_history.append(rmse.cpu().item())
+                    self.log("epsilon", eps, prog_bar=True)
+            except Exception as e:
+                print(f"[Warning] Failed to log ε or RMSE: {e}")
+        super().on_train_epoch_end()
 
-            self.log("epsilon", epsilon, prog_bar=True)
+
+    def on_train_end(self):
+        # final privacy–utility curve
+        if self.enable_dp and self.epsilon_history:
+            plt.figure(figsize=(6,4))
+            plt.plot(self.epsilon_history, self.metric_history, 'o-', alpha=0.8)
+            plt.xlabel("ε"); plt.ylabel("Validation RMSE")
+            plt.title("Privacy–Utility Trade-off")
+            plt.grid(True)
+            fname = f"dp_tradeoff_{int(time.time())}.png"
+            plt.savefig(fname, dpi=300)
+            plt.close()
