@@ -53,7 +53,8 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
             preds = self.forward(user_ids, item_ids)
 
         targets_norm = (targets - self.hparams.target_min) / (self.hparams.target_max - self.hparams.target_min)
-        probs = torch.sigmoid(preds).squeeze()
+        errors = torch.abs(preds.squeeze() - targets_norm)
+        probs = 1.0 - errors
 
         self.scores.extend(probs.tolist())
         self.labels.extend(label.tolist())

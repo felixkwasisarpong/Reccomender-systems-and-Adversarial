@@ -41,17 +41,14 @@ class CustomDP_SGD(BaseModel):
         optimizer = self.optimizers()
         optimizer.zero_grad()
 
-        preds = self(batch)
+        preds = self(batch)  # batch is a dict, as expected by forward()
         targets = batch["rating"]
         loss = self.loss_fn(preds, targets)
 
-        # manual backward
         self.manual_backward(loss)
 
-        # clip gradients
         torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_norm)
 
-        # Add noise if enabled
         if self.noise_scale > 0:
             for p in self.parameters():
                 if p.grad is not None:
@@ -64,7 +61,6 @@ class CustomDP_SGD(BaseModel):
 
         optimizer.step()
 
-        # metrics
         self.train_mse.update(preds, targets)
         self.train_mae.update(preds, targets)
         self.train_rmse.update(preds, targets)

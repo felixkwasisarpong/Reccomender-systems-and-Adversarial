@@ -19,11 +19,9 @@ model:
     loss_function: "Huber"
     target_min: 1.0
     target_max: 5.0
-    noise_scale: 3.5
-    
+    noise_scale: 45
     clip_norm: 1.0
     delta: 1e-5
-
 
 # Lightning execution flow flags
 do_train: true

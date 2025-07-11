@@ -19,7 +19,7 @@ model:
     loss_function: "Huber"
     target_min: 1.0
     target_max: 5.0
-    noise_scale: 0.54
+    noise_scale: 1.05
     clip_norm: 1.0
     delta: 1e-5
 

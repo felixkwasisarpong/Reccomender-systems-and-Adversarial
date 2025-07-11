@@ -14,19 +14,27 @@ from sklearn.metrics import roc_auc_score
 
 class DPMembershipInferenceAttack(DPModel):
     def __init__(self, *args, **kwargs):
-        kwargs["enable_dp"] = False  # Disable DP during inference
+        kwargs["enable_dp"] = False  # Disable DP during attack evaluation
         super().__init__(*args, **kwargs)
         self.scores = []
         self.labels = []
 
     def test_step(self, batch, batch_idx):
-        logits = self(batch)
-        probs = torch.sigmoid(logits).squeeze()
-        
-        self.scores.extend(probs.tolist())
-        self.labels.extend(batch['label'].tolist())
+        preds = self(batch).squeeze()
+        targets = batch["rating"]
+        labels = batch["label"]
 
+        # Normalize targets to [0, 1]
+        target_min = self.hparams.target_min
+        target_max = self.hparams.target_max
+        targets_norm = (targets - target_min) / (target_max - target_min)
 
+        # Compute per-sample errors
+        errors = torch.abs(preds - targets_norm)
+        scores = 1.0 - errors  # Higher score → more likely to be a member
+
+        self.scores.extend(scores.tolist())
+        self.labels.extend(labels.tolist())
 
     def on_test_epoch_end(self):
         if not self.scores:
@@ -38,14 +46,15 @@ class DPMembershipInferenceAttack(DPModel):
         fpr, tpr, _ = roc_curve(self.labels, self.scores)
 
         plt.figure(figsize=(6, 6))
-        plt.plot(fpr, tpr, color='blue', label=f"ROC Curve (AUC = {auc:.2f})")  # colored ROC
-        plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label="Random Guess")  # baseline
+        plt.plot(fpr, tpr, color='blue', label=f"ROC Curve (AUC = {auc:.2f})")
+        plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label="Random Guess")
         plt.xlabel("False Positive Rate")
         plt.ylabel("True Positive Rate")
         plt.title("Membership Inference Attack ROC Curve")
         plt.legend(loc="lower right")
         plt.grid(True)
-        plt.savefig("mia_roc_curve_mid.png")
+        plt.tight_layout()
+        plt.savefig("mia_roc_curve_weak.png")
         plt.close()
 
         self.scores.clear()

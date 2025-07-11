@@ -55,7 +55,7 @@ def compute_gradient_penalty(critic, real_data, fake_data, device):
     return penalty, grad_norm.mean()
 
 class WGAN(pl.LightningModule):
-    def __init__(self, noise_dim=32, output_dim=24, lr=1e-4, n_critic=5, lambda_gp=0.1):
+    def __init__(self, noise_dim=32, output_dim=24, lr=1e-4, n_critic=5, lambda_gp=0.1, pred_file="predictions",num_attack_samples=10000):
         super().__init__()
         self.save_hyperparameters()
         self.generator = Generator(noise_dim, output_dim)
@@ -63,7 +63,10 @@ class WGAN(pl.LightningModule):
         self.automatic_optimization = False
         self.kl_real = []
         self.kl_fake = []
-        os.makedirs("wgan_samples_dp_weak", exist_ok=True)
+        self.latent_dim = noise_dim
+        self.hparams.pred_file = pred_file
+        self.num_attack_samples = num_attack_samples
+        os.makedirs("wgan_samples", exist_ok=True)
 
     def forward(self, z):
         return self.generator(z).clamp(0, 1)
@@ -140,7 +143,7 @@ class WGAN(pl.LightningModule):
         plt.bar(centers, pf, width=bins[1]-bins[0], alpha=0.6, label="Fake")
         plt.title(f"KL(pred_rating) = {kl_pred:.3f}")
         plt.legend()
-        plt.savefig("wgan_samples_dp_weak/kl_pred_rating.png")
+        plt.savefig(f"wgan_samples/{self.hparams.pred_file}.png")
         plt.close()
 
     def configure_optimizers(self):

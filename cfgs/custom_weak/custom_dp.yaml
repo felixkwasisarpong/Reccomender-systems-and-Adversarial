@@ -3,8 +3,6 @@ seed_everything: 0
 model:
   class_path: models.CustomDP_SGD
   init_args:
-  class_path: models.CustomDP_SGD
-  init_args:
     num_users: 478615
     num_items: 17470
     embed_dim: 16            # replace with dataset.get_vocab_sizes()['num_items']
@@ -21,7 +19,7 @@ model:
     loss_function: "Huber"
     target_min: 1.0
     target_max: 5.0
-    noise_scale: 0.075
+    noise_scale: 0.130
     clip_norm: 1.0
     delta: 1e-5
 

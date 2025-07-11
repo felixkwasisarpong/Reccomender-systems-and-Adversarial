@@ -1,0 +1,20 @@
+seed_everything: 42
+
+model:
+  class_path: models.AttributeClassifier
+  init_args:
+    input_dim: 24  # Adjust based on dataset features
+    target_attr: "age"  # or "occupation" or "age"
+    hidden_dims: [128, 64]
+    lr: 1e-3
+    pred_file: "opacus_mid"  # Name of the prediction file for attack
+    weight_decay: 1e-3
+    dropout_rate: 0.2
+
+
+
+do_train: false
+do_validate: false
+do_test: false
+do_predict: false
+do_attack: false
