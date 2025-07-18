@@ -17,10 +17,11 @@ model:
     target_min:    1.0
     target_max:    5.0
     use_attrs:     true
+    predict_file: "opacus_strong"  # Name of the file to save predictions
 
     # DP args
     enable_dp:      true
-    target_epsilon: 0.212    # or 1.0, 5.0 for other regimes
+    target_epsilon: 0.22    # or 1.0, 5.0 for other regimes
     target_delta:   1e-5
     max_grad_norm:  1.0
 

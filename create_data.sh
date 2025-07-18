@@ -20,4 +20,4 @@ module load cuda/11.0          # Adjust based on the available CUDA version
 
 conda activate wildfire
 
-python src/Train.py --config=cfgs/create/synth.yaml --trainer=cfgs/create/trainer.yaml --data=cfgs/data_loader.yaml --data=cfgs/data_loader.yaml --seed_everything=0 --trainer.max_epochs=50  --data.data_dir netflix_data
+python src/Train.py --config=cfgs/create/synth.yaml --trainer=cfgs/create/trainer.yaml --data=cfgs/data_loader.yaml --data=cfgs/data_loader.yaml --seed_everything=0 --trainer.max_epochs=50  --do_train=False --do_validate=False --do_test=False --data.data_dir netflix_data

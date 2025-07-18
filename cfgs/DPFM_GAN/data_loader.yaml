@@ -1,0 +1,3 @@
+data_dir: DATA_DIR_PATH
+batch_size: 256
+num_workers: 10

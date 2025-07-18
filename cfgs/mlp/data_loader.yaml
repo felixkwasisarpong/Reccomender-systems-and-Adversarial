@@ -1,4 +1,4 @@
 data_dir: DATA_DIR_PATH
 batch_size: 128
 num_workers: 10
-pred_file: "opacus_mid"
+pred_file: "custom_strong"

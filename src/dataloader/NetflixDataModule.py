@@ -41,7 +41,7 @@ class NetflixDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None):
         full_dataset = NetflixDataset(
-            h5_path=os.path.join(self.data_dir, f"{self.pred_file}.hdf5"),
+            h5_path=os.path.join(self.data_dir,f"{self.pred_file}.hdf5"),
             max_samples=self.max_samples,
             random_state=self.random_state,
             return_attrs=self.return_attrs,

@@ -8,7 +8,7 @@ model:
     lr: 1e-6
     n_critic: 5
     lambda_gp: 0.5
-    pred_file: "dp_weak"  # Name of the prediction file for attack  
+    pred_file: "DP_weak"  # Name of the prediction file for attack  
 
 do_train: false
 do_validate: false

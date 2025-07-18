@@ -19,9 +19,10 @@ model:
     loss_function: "Huber"
     target_min: 1.0
     target_max: 5.0
-    noise_scale: 1.05
+    noise_scale: 1.03
     clip_norm: 1.0
     delta: 1e-5
+    predict_file: "custom_mid"  # Name of the file to save predictions
 
 # Lightning execution flow flags
 do_train: true

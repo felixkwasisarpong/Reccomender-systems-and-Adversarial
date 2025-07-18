@@ -7,7 +7,7 @@ model:
     target_attr: "age"  # or "occupation" or "age"
     hidden_dims: [128, 64]
     lr: 1e-3
-    pred_file: "opacus_mid"  # Name of the prediction file for attack
+    pred_file: "custom_strong"  # Name of the prediction file for attack
     weight_decay: 1e-3
     dropout_rate: 0.2
 

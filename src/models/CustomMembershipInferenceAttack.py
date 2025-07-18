@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from .CustomDP_SGD import CustomDP_SGD
 from .BaseModel import BaseModel
 import inspect
+import os
 
 class CustomMembershipInferenceAttack(CustomDP_SGD):
     def __init__(self, *args, **kwargs):
@@ -77,7 +78,14 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         plt.legend(loc="lower right")
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig("mia_roc_curve_custom_weak.png")
+
+        # Dynamically resolve save path
+        suffix = getattr(self, "output_suffix", "default")
+        out_dir = getattr(self, "output_dir", "mia_outputs")
+        os.makedirs(out_dir, exist_ok=True)
+
+        fig_path = os.path.join(out_dir, f"mia_roc_curve_custom_weak.png")
+        plt.savefig(fig_path)
         plt.close()
 
         self.scores.clear()

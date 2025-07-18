@@ -17,6 +17,7 @@ model:
     target_min:    1.0
     target_max:    5.0
     use_attrs:     true
+    predict_file: "opacus_mid"  # Name of the file to save predictions
 
     # DP args
     enable_dp:      true

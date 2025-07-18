@@ -11,6 +11,7 @@ from sklearn.metrics import roc_auc_score, roc_curve
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
+import os
 
 class DPMembershipInferenceAttack(DPModel):
     def __init__(self, *args, **kwargs):
@@ -54,7 +55,12 @@ class DPMembershipInferenceAttack(DPModel):
         plt.legend(loc="lower right")
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig("mia_roc_curve_weak.png")
+
+        # Determine output directory
+        out_dir = getattr(self, "output_dir", ".")
+        os.makedirs(out_dir, exist_ok=True)
+        fig_path = os.path.join(out_dir, f"mia_roc_curve_opacus_strong.png")
+        plt.savefig(fig_path)
         plt.close()
 
         self.scores.clear()

@@ -6,5 +6,6 @@ from .MembershipInferenceAttack import MembershipInferenceAttack
 from .DPMembershipInferenceAttack import DPMembershipInferenceAttack
 from .CustomMembershipInferenceAttack import CustomMembershipInferenceAttack
 from .AttributeClassifier import AttributeClassifier
+from .DPFM_GANTrainer import DPFM_GANTrainer
 
 from .WGAN import WGAN

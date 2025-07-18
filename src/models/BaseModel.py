@@ -21,6 +21,7 @@ class BaseModel(pl.LightningModule):
         loss_function="MSE",
         target_min=1.0,
         target_max=5.0,
+        predict_file="predictions",
         use_attrs=True,
     ):
         super().__init__()

@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=wgan_dp_str        # Job name
 #SBATCH --nodes=1                   # Number of nodes
-#SBATCH --ntasks-per-node=25         # Number of CPUs per node
-#SBATCH --gres=gpu:1                 # Number of GPUs per node
+#SBATCH --ntasks-per-node=40         # Number of CPUs per node
+#SBATCH --gres=gpu:2                 # Number of GPUs per node
 #SBATCH --partition=matador          # Partition name
 #SBATCH --time=20:00:00               # Time limit (2 hours)
 #SBATCH --output=dp_str.log          # Output log file
@@ -20,4 +20,4 @@ module load cuda/11.0          # Adjust based on the available CUDA version
 
 conda activate wildfire
 
-python src/Train.py --config=cfgs/wgan_dp_str/gan.yaml --trainer=cfgs/wgan_dp_str/trainer.yaml --data=cfgs/wgan_dp_str/data_loader.yaml --seed_everything=0 --trainer.max_epochs=50 --do_attack=True --do_train=False --do_validate=False --do_test=False --data.data_dir netflix_data
+python src/Train.py --config=cfgs/wgan_dp_str/gan.yaml --trainer=cfgs/wgan_dp_str/trainer.yaml --data=cfgs/wgan_dp_str/data_loader.yaml --seed_everything=0 --trainer.max_epochs=50 --do_attack=True --do_train=False --do_validate=False --do_test=False --data.data_dir predicted_data

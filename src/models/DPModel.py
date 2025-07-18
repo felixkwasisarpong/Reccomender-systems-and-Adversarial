@@ -17,6 +17,7 @@ class DPModel(BaseModel):
         num_items: int,
         num_genders: int,
         num_occupations: int,
+ 
         genre_dim: int,
         embed_dim: int = 16,
         mlp_dims: list = [128, 64],
@@ -27,6 +28,7 @@ class DPModel(BaseModel):
         target_min: float = 1.0,
         target_max: float = 5.0,
         use_attrs: bool = True,
+        predict_file: str = "predictions",
         # —— DP-specific args ——
         enable_dp: bool = False,
         target_epsilon: float = 1.0,
@@ -48,6 +50,7 @@ class DPModel(BaseModel):
             loss_function=loss_function,
             target_min=target_min,
             target_max=target_max,
+            predict_file=predict_file,
             use_attrs=use_attrs,
             **kwargs
         )
@@ -111,6 +114,6 @@ class DPModel(BaseModel):
             plt.xlabel("ε"); plt.ylabel("Validation RMSE")
             plt.title("Privacy–Utility Trade-off")
             plt.grid(True)
-            fname = f"dp_tradeoff_{int(time.time())}.png"
+            fname = f"dp_tradeoff_{self.hparams.predict_file}.png"
             plt.savefig(fname, dpi=300)
             plt.close()
