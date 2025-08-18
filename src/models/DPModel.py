@@ -68,13 +68,20 @@ class DPModel(BaseModel):
         if not self.enable_dp:
             return
 
-        train_loader = self.trainer.datamodule.train_dataloader()
-        optimizer = self.trainer.optimizers[0]
+        train_loader = self.trainer.train_dataloader
+        optimizers = self.trainer.optimizers
 
-        # Wrap self in-place (do not assign back to self)
-        _, dp_optimizer, _ = self.privacy_engine.make_private_with_epsilon(
+        if len(optimizers) < 1:
+            raise ValueError("No optimizers found.")
+
+        # Assume the first optimizer is for the main model
+        main_optimizer = optimizers[0]
+        other_optimizers = optimizers[1:]
+
+        # Apply DP only to the main optimizer
+        _, dp_main_optimizer, _ = self.privacy_engine.make_private_with_epsilon(
             module=self,
-            optimizer=optimizer,
+            optimizer=main_optimizer,
             data_loader=train_loader,
             epochs=self.trainer.max_epochs,
             target_epsilon=self.target_epsilon,
@@ -82,7 +89,8 @@ class DPModel(BaseModel):
             max_grad_norm=self.max_grad_norm,
         )
 
-        self.trainer.optimizers = [dp_optimizer]
+        # Replace only the main optimizer
+        self.trainer.optimizers = [dp_main_optimizer] + other_optimizers
 
     def forward(self, batch):
         return super().forward(batch)

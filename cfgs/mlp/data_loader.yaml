@@ -1,4 +1,4 @@
 data_dir: DATA_DIR_PATH
 batch_size: 128
 num_workers: 10
-pred_file: "custom_strong"
+pred_file: "Adv_strong"

@@ -1,4 +1,4 @@
-accelerator: gpu
+accelerator: mps
 strategy: auto
 devices: 1
 num_nodes: 1

@@ -1,0 +1,146 @@
+[rank: 0] Global seed set to 0
+wandb: WARNING `wandb.require('service')` is a no-op as it is now the default behavior.
+wandb: Currently logged in as: felixsarpong25 (felixsarpong25-student) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+--- Logging error ---
+Traceback (most recent call last):
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/logging/__init__.py", line 1104, in emit
+    self.flush()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/logging/__init__.py", line 1084, in flush
+    self.stream.flush()
+OSError: [Errno 5] Input/output error
+Call stack:
+  File "/home/fsarpong/Thesis/src/Train.py", line 261, in <module>
+    main()
+  File "/home/fsarpong/Thesis/src/Train.py", line 81, in main
+    cli = MyLightningCLI(None, NetflixDataModule,subclass_mode_model=True, save_config_kwargs={
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/cli.py", line 350, in __init__
+    self.instantiate_classes()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/cli.py", line 499, in instantiate_classes
+    self.config_init = self.parser.instantiate_classes(self.config)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/jsonargparse/deprecated.py", line 131, in patched_instantiate_classes
+    cfg = self._unpatched_instantiate_classes(cfg, **kwargs)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/jsonargparse/core.py", line 1135, in instantiate_classes
+    parent[key] = component.instantiate_classes(value)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/jsonargparse/typehints.py", line 474, in instantiate_classes
+    value[num] = adapt_typehints(val, self._typehint, instantiate_classes=True, sub_add_kwargs=sub_add_kwargs)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/jsonargparse/typehints.py", line 638, in adapt_typehints
+    vals.append(adapt_typehints(val, subtypehint, **adapt_kwargs))
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/jsonargparse/typehints.py", line 785, in adapt_typehints
+    val = adapt_class_type(val, serialize, instantiate_classes, sub_add_kwargs, prev_val=prev_val)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/jsonargparse/typehints.py", line 996, in adapt_class_type
+    return val_class(**{**init_args, **dict_kwargs})
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/loggers/wandb.py", line 357, in __init__
+    _ = self.experiment
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/lightning_fabric/loggers/logger.py", line 114, in experiment
+    return fn(self)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/loggers/wandb.py", line 405, in experiment
+    self._experiment = wandb.init(**self._wandb_init)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/wandb/sdk/wandb_init.py", line 1588, in init
+    exit_stack.enter_context(wi.setup_run_log_directory(run_settings))
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/contextlib.py", line 492, in enter_context
+    result = _cm_type.__enter__(cm)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/contextlib.py", line 135, in __enter__
+    return next(self.gen)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/wandb/sdk/wandb_init.py", line 702, in setup_run_log_directory
+    self._wl._early_logger_flush(logging.getLogger("wandb"))
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/wandb/sdk/wandb_setup.py", line 233, in _early_logger_flush
+    self._logger._flush(new_logger)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/wandb/sdk/wandb_setup.py", line 80, in _flush
+    new_logger.log(level, msg, *args, **kwargs)
+Message: 'Current SDK version is 0.21.0'
+Arguments: ()
+wandb: Tracking run with wandb version 0.21.0
+wandb: Run data is saved locally in ./lightning_logs/dpfm_adversarial_weak/wandb/run-20250815_223712-33i9rs96
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run models.DPFM_GANTrainer
+wandb: ⭐️ View project at https://wandb.ai/felixsarpong25-student/dp_fm
+wandb: 🚀 View run at https://wandb.ai/felixsarpong25-student/dp_fm/runs/33i9rs96
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+   | Name                 | Type               | Params
+-------------------------------------------------------------
+0  | user_embedding       | Embedding          | 11.3 K
+1  | item_embedding       | Embedding          | 20.2 K
+2  | gender_embedding     | Embedding          | 24    
+3  | occupation_embedding | Embedding          | 252   
+4  | age_projector        | Linear             | 24    
+5  | genre_projector      | Linear             | 240   
+6  | linear               | Linear             | 73    
+7  | mlp                  | Sequential         | 6.8 K 
+8  | output_layer         | Linear             | 35    
+9  | loss_fn              | SmoothL1Loss       | 0     
+10 | train_mse            | MeanSquaredError   | 0     
+11 | train_mae            | MeanAbsoluteError  | 0     
+12 | train_rmse           | MeanSquaredError   | 0     
+13 | val_mse              | MeanSquaredError   | 0     
+14 | val_mae              | MeanAbsoluteError  | 0     
+15 | val_rmse             | MeanSquaredError   | 0     
+16 | test_mse             | MeanSquaredError   | 0     
+17 | test_mae             | MeanAbsoluteError  | 0     
+18 | test_rmse            | MeanSquaredError   | 0     
+19 | repr_dropout         | Dropout            | 0     
+20 | multi_attr_adversary | MultiAttrAdversary | 20.4 K
+-------------------------------------------------------------
+59.3 K    Trainable params
+0         Non-trainable params
+59.3 K    Total params
+0.237     Total estimated model params size (MB)
+SLURM auto-requeueing enabled. Setting signal handlers.
+Traceback (most recent call last):
+Error in sys.excepthook:
+Traceback (most recent call last):
+
+
+Original exception was:
+Traceback (most recent call last):
+  File "/home/fsarpong/Thesis/src/Train.py", line 261, in <module>
+    print(f"[✓] Saved synthetic data to: {out_path}")
+  File "/home/fsarpong/Thesis/src/Train.py", line 87, in main
+    cli.trainer.fit(cli.model, cli.datamodule,
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 520, in fit
+    call._call_and_handle_interrupt(
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 44, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 559, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 935, in _run
+    results = self._run_stage()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 978, in _run_stage
+    self.fit_loop.run()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 202, in run
+    self.on_advance_end()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/loops/fit_loop.py", line 369, in on_advance_end
+    call._call_callback_hooks(trainer, "on_train_epoch_end", monitoring_callbacks=True)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py", line 190, in _call_callback_hooks
+    fn(trainer, trainer.lightning_module, *args, **kwargs)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/callbacks/model_checkpoint.py", line 303, in on_train_epoch_end
+    self._save_topk_checkpoint(trainer, monitor_candidates)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/callbacks/model_checkpoint.py", line 360, in _save_topk_checkpoint
+    self._save_monitor_checkpoint(trainer, monitor_candidates)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/callbacks/model_checkpoint.py", line 658, in _save_monitor_checkpoint
+    self._update_best_and_save(current, trainer, monitor_candidates)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/callbacks/model_checkpoint.py", line 709, in _update_best_and_save
+    self._save_checkpoint(trainer, filepath)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/callbacks/model_checkpoint.py", line 365, in _save_checkpoint
+    trainer.save_checkpoint(filepath, self.save_weights_only)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/trainer.py", line 1262, in save_checkpoint
+    self._checkpoint_connector.save_checkpoint(filepath, weights_only=weights_only, storage_options=storage_options)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/trainer/connectors/checkpoint_connector.py", line 500, in save_checkpoint
+    self.trainer.strategy.save_checkpoint(_checkpoint, filepath, storage_options=storage_options)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/pytorch_lightning/strategies/strategy.py", line 445, in save_checkpoint
+    self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/lightning_fabric/plugins/io/torch_io.py", line 57, in save_checkpoint
+    _atomic_save(checkpoint, path)
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/lightning_fabric/utilities/cloud_io.py", line 71, in _atomic_save
+    with fsspec.open(filepath, "wb") as f:
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/fsspec/core.py", line 134, in __exit__
+    self.close()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/fsspec/core.py", line 153, in close
+    f.flush()
+  File "/home/fsarpong/conda/envs/wildfire/lib/python3.10/site-packages/fsspec/implementations/local.py", line 453, in flush
+    self.f.flush()
+OSError: [Errno 5] Input/output error

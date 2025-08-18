@@ -45,9 +45,9 @@ class NetflixDataset(Dataset):
         #         self.occupation_all = file['occupation'][:]
         #         self.genre_all = file['genre_onehot'][:]
         with h5py.File(self.h5_path, 'r') as file:
-            print("Top-level keys:", list(file.keys()))
+  
             if 'predictions' in file:
-                print("gets here")
+             
                 # Structured array format (like cus_weak.hdf5)
                 preds = file['predictions']
                 self.user_ids_all = preds['user_id'][:].astype(np.int64)

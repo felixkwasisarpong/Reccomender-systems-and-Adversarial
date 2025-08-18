@@ -3,18 +3,19 @@ seed_everything: 42
 model:
   class_path: models.AttributeClassifier
   init_args:
-    input_dim: 24  # Adjust based on dataset features
-    target_attr: "age"  # or "occupation" or "age"
-    hidden_dims: [128, 64]
+    target_attr: "age"
+    hidden_dims: [256, 128]
+    dropout_rate: 0.1
     lr: 1e-3
-    pred_file: "custom_strong"  # Name of the prediction file for attack
-    weight_decay: 1e-3
-    dropout_rate: 0.2
+    weight_decay: 1e-5
+    pred_file: "Adv_strong"
+    include_rating: false
+    use_identifiers: false
+    strict_feature_check: true
 
-
-
-do_train: false
-do_validate: false
-do_test: false
+# Run flags for this MLP auditor
+do_train: true
+do_validate: true
+do_test: true
 do_predict: false
 do_attack: false

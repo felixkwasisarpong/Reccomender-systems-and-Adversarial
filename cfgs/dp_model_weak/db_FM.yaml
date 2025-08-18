@@ -3,14 +3,14 @@ seed_everything: 0
 model:
   class_path: models.DPModel
   init_args:
-    num_users:     478615
-    num_items:     17470
-    num_genders:   2
-    num_occupations: 21
-    genre_dim:     19
-    embed_dim:     16
+    num_users: 943
+    num_items: 1682
+    embed_dim: 32            # replace with dataset.get_vocab_sizes()['num_items']
+    num_genders: 2               # typically 0 (F), 1 (M)
+    num_occupations: 21          # number of unique occupation categories
+    genre_dim: 19
     mlp_dims:      [128, 64]
-    dropout:       0.3
+    dropout:       0.2
     learning_rate: 1e-3
     l2_penalty:    1e-3
     loss_function: "Huber"
@@ -21,7 +21,7 @@ model:
 
     # DP args
     enable_dp:      true
-    target_epsilon: 10.00    # or 1.0, 5.0 for other regimes
+    target_epsilon: 10.003    # or 1.0, 5.0 for other regimes
     target_delta:   1e-5
     max_grad_norm:  1.0
 do_train: true

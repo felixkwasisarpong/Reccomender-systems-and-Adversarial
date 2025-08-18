@@ -11,6 +11,7 @@ from models.CustomMembershipInferenceAttack import CustomMembershipInferenceAtta
 from models.AttributeClassifier import AttributeClassifier
 from models.DPFM_GANTrainer import DPFM_GANTrainer  # replace with your actual path
 from models.WGAN import WGAN  # replace with your actual path
+from models.DPFMMembershipInferenceAttack import DPFMMembershipInferenceAttack  # noqa
 import wandb
 import torch
 import os
@@ -98,7 +99,7 @@ def main():
     # If we have trained a model, use the best checkpoint for predicting.
     if cli.config.do_predict:
         # 1) Load the specified DP-FM checkpoint
-        ckpt_path = "/Users/Apple/Documents/assignements/Thesis/lightning_logs/custom_mid/dp_fm/xntszmc7/checkpoints/epoch=19-step=6260.ckpt"
+        ckpt_path = "/Users/Apple/Documents/assignements/Thesis/lightning_logs/custom_strong/dp_fm/y8fih0tw/checkpoints/epoch=10-step=3432.ckpt"
         cli.model = CustomDP_SGD.load_from_checkpoint(str(ckpt_path))
         cli.model.eval()
         
@@ -118,10 +119,10 @@ def main():
                 movie_indices.append(batch["item_id"].cpu())
                 predicted_ratings.append(preds.cpu())
 
-                if cli.model.use_attrs:
-                    for k in attr_buffers:
-                        if k in batch:
-                            attr_buffers[k].append(batch[k].cpu())
+                
+                for k in attr_buffers:
+                    if k in batch:
+                        attr_buffers[k].append(batch[k].cpu())
 
         # 3) Concatenate to NumPy
         user_np   = torch.cat(user_indices)   .numpy().astype(np.int64)
@@ -134,12 +135,12 @@ def main():
             ("movie_id",   np.int32),
             ("pred_rating",np.float32),
         ]
-        if cli.model.use_attrs:
-            fields += [
-                ("gender",     np.int8),
-                ("age",        np.float32),
-                ("occupation", np.int8),
-                ("genre",      np.float32, (batch["genre"].shape[-1],))
+
+        fields += [
+            ("gender",     np.int8),
+            ("age",        np.float32),
+            ("occupation", np.int8),
+            ("genre",      np.float32, (batch["genre"].shape[-1],))
             ]
         dt = np.dtype(fields)
 
@@ -149,14 +150,13 @@ def main():
         structured["movie_id"]    = movie_np
         structured["pred_rating"] = pred_np
 
-        if cli.model.use_attrs:
-            structured["gender"]     = torch.cat(attr_buffers["gender"]).numpy().astype(np.int8)
-            structured["age"]        = torch.cat(attr_buffers["age"])   .numpy().astype(np.float32)
-            structured["occupation"] = torch.cat(attr_buffers["occupation"]).numpy().astype(np.int8)
-            structured["genre"]      = torch.cat(attr_buffers["genre"]) .numpy().astype(np.float32)
+        structured["gender"]     = torch.cat(attr_buffers["gender"]).numpy().astype(np.int8)
+        structured["age"]        = torch.cat(attr_buffers["age"])   .numpy().astype(np.float32)
+        structured["occupation"] = torch.cat(attr_buffers["occupation"]).numpy().astype(np.int8)
+        structured["genre"]      = torch.cat(attr_buffers["genre"]) .numpy().astype(np.float32)
 
         # 6) Save to HDF5, naming by the checkpoint stem
-        out_name = "predicted_data/Cus_mid.hdf5"
+        out_name = "predicted_data/custom_strong.hdf5"
         with h5py.File(out_name, "w") as f:
             f.create_dataset("predictions", data=structured)
             f.attrs["global_mean"]    = float(pred_np.mean())
@@ -165,16 +165,32 @@ def main():
         print(f"[✓] Saved {len(pred_np)} predictions to {out_name}")
 
     if cli.config.do_analyze:
-            ckpt_path = "/Users/Apple/Documents/assignements/Thesis/lightning_logs/strong/dp_fm/trgfrjx7/checkpoints/epoch=18-step=5947.ckpt"
+        ckpt_path = "/Users/Apple/Documents/assignements/Thesis/lightning_logs/opacus_weak/dp_fm/7kyum5gd/checkpoints/epoch=18-step=5928.ckpt"
+        
+        # Setup datamodule with improved MIA strategy
+        cli.datamodule.setup("fit")
+        
+        # You can choose different MIA strategies:
+        # Option 1: Improved MIA using 1M dataset as true non-members (RECOMMENDED)
+        cli.datamodule.mia_strategy = "improved"
+        
+        # Option 2: User-level MIA approach
+        # cli.datamodule.mia_strategy = "user_level"
+        
+        # Option 3: Original approach (for comparison)
+        # cli.datamodule.mia_strategy = "original"
+        
+        # Load the improved attack model
+        attack_model = DPMembershipInferenceAttack.load_from_dp_checkpoint(ckpt_path)
+        
+        # Get MIA dataloader with improved strategy
+        mia_loader = cli.datamodule.mia_dataloaders()[0]
+        
+        # Run the attack
+        cli.trainer.test(attack_model, dataloaders=[mia_loader])
+        
+        print("MIA evaluation completed. Check 'mia_results/' directory for detailed plots and analysis.")
 
-        # attack_model = CustomMembershipInferenceAttack.load_from_checkpoint(ckpt_path)
-            attack_model = DPMembershipInferenceAttack.load_from_checkpoint(ckpt_path)
-
-            member_data_path = "netflix_data/movielens_100k_with_attrs.hdf5"
-            nonmember_data_path = "netflix_data/movielens_1m_with_attrs.hdf5"
-            mia_loader = cli.datamodule.mia_dataloaders(member_data_path, nonmember_data_path)[0]
-
-            cli.trainer.test(attack_model, dataloaders=[mia_loader])
 
     if cli.config.do_attack:
         cli.datamodule.setup(stage="attack")
@@ -185,7 +201,7 @@ def main():
     if cli.config.do_create_synthetic_data:
         engines = {
             "opacus": {
-                "strong": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_dp_str/dp_fm/1dqonvq7/checkpoints/epoch=35-step=844128.ckpt",
+                "strong": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_dp_str/dp_fm/j6y7ldj4/checkpoints/epoch=11-step=281376.ckpt",
                 "mid": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_dp_mid/dp_fm/ejqhno9h/checkpoints/epoch=17-step=422064.ckpt",
                 "weak": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_dp_weak/dp_fm/ikbl6yen/checkpoints/epoch=37-step=891024.ckpt"
             },
@@ -193,6 +209,10 @@ def main():
                 "strong": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_cus_strong/dp_fm/par67if2/checkpoints/epoch=11-step=281376.ckpt",
                 "mid": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_cus_mid/dp_fm/4c9ysf18/checkpoints/epoch=21-step=515856.ckpt",
                 "weak": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/wgan_cus_weak/dp_fm/yploz3vr/checkpoints/epoch=31-step=750336.ckpt"
+            },"Adv": {
+                "strong": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/Adv_strong/dp_fm/8zl6lnxc/checkpoints/epoch=4-step=117240.ckpt",
+                "mid": "",
+                "weak": "/Users/Apple/Documents/assignements/Thesis/lightning_logs/Adv_weak/dp_fm/edzpd64r/checkpoints/epoch=18-step=445512.ckpt"
             }
         }
 

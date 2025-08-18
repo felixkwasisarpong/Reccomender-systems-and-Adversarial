@@ -6,8 +6,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from torchmetrics import MeanSquaredError, MeanAbsoluteError
-
+import os
 from .BaseModel import BaseModel
+from opacus.accountants import RDPAccountant
 
 
 class CustomDP_SGD(BaseModel):
@@ -24,6 +25,7 @@ class CustomDP_SGD(BaseModel):
         clip_norm=1.0,
         delta=1e-5,
         log_freq=50,
+        dp_microbatch_size: int = 32,
         predict_file="predictions",
         **kwargs
     ):
@@ -41,38 +43,73 @@ class CustomDP_SGD(BaseModel):
         self.clip_norm = clip_norm
         self.delta = delta
         self.log_freq = log_freq
+        self.dp_microbatch_size = int(dp_microbatch_size)
         self.epsilon_history = []
         self.metric_history = []
         self.privacy_steps = 0
         self.sample_rate = None
         self.automatic_optimization = False
+        self.accountant = None
 
     def on_train_start(self):
-        batch_size = self.trainer.train_dataloader.batch_size
-        self.sample_rate = batch_size / len(self.trainer.datamodule.train_dataset)
+        if self.trainer is not None and hasattr(self.trainer, 'datamodule') and hasattr(self.trainer.datamodule, 'train_dataset'):
+            batch_size = self.trainer.train_dataloader.batch_size
+            self.sample_rate = batch_size / len(self.trainer.datamodule.train_dataset)
+        else:
+            self.sample_rate = None
+        if self.noise_scale > 0:
+            self.accountant = RDPAccountant()
 
     def training_step(self, batch, batch_idx):
         optimizer = self.optimizers()
-        optimizer.zero_grad()
+        self.zero_grad(set_to_none=True)
 
         preds = self(batch)
         targets = batch["rating"]
         loss = self.loss_fn(preds, targets)
 
-        self.manual_backward(loss)
-        torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_norm)
+        params = [p for p in self.parameters() if p.requires_grad]
+        accum_grads = [torch.zeros_like(p, device=p.device) for p in params]
+        B = targets.shape[0]
+        eff_count = 0
+
+        for start in range(0, B, self.dp_microbatch_size):
+            end = min(start + self.dp_microbatch_size, B)
+            for i in range(start, end):
+                # zero model grads (faster than optimizer.zero_grad() in a tight loop)
+                self.zero_grad(set_to_none=True)
+                b_i = {k: (v[i:i+1] if torch.is_tensor(v) else v) for k, v in batch.items()}
+                out_i = self(b_i)
+                loss_i = self.loss_fn(out_i, b_i["rating"])
+                self.manual_backward(loss_i)
+
+                # per-sample grad L2 over all params
+                g_norm = torch.sqrt(sum((p.grad.detach() ** 2).sum() for p in params) + 1e-12)
+                c = float(min(1.0, self.clip_norm / (g_norm + 1e-12)))
+                for j, p in enumerate(params):
+                    accum_grads[j] += p.grad.detach() * c
+                eff_count += 1
+
+        # average clipped grads and add noise                                                                                                
+        if eff_count == 0:
+            eff_count = B  # safety, should not happen
+        for p, g in zip(params, accum_grads):
+            if self.noise_scale > 0:
+                if self.noise_type == 'gaussian':
+                    noise = torch.randn_like(g) * (self.noise_scale * self.clip_norm)
+                elif self.noise_type == 'laplace':
+                    s = self.noise_scale * self.clip_norm
+                    noise = torch.distributions.Laplace(loc=0.0, scale=s).sample(g.shape).to(g.device)
+                else:
+                    raise ValueError(f"Unsupported noise type: {self.noise_type}")
+                g = g + noise
+            g = g / float(eff_count)
+            p.grad = g
 
         if self.noise_scale > 0:
-            for p in self.parameters():
-                if p.grad is not None:
-                    if self.noise_type == 'gaussian':
-                        noise = torch.randn_like(p.grad)
-                    elif self.noise_type == 'laplace':
-                        noise = torch.distributions.Laplace(0, 1).sample(p.grad.shape).to(p.grad.device)
-                    else:
-                        raise ValueError(f"Unsupported noise type: {self.noise_type}")
-                    p.grad += noise * self.noise_scale * self.clip_norm
             self.privacy_steps += 1
+            if self.accountant is not None and self.sample_rate is not None:
+                self.accountant.step(noise_multiplier=self.noise_scale, sample_rate=self.sample_rate)
 
         optimizer.step()
 
@@ -91,29 +128,11 @@ class CustomDP_SGD(BaseModel):
 
     def on_train_epoch_end(self):
         super().on_train_epoch_end()
-        if self.noise_scale > 0 and self.sample_rate is not None:
-            if self.noise_type == 'gaussian':
-                orders = np.arange(2, 64)
-                rdp = self.compute_rdp_gaussian(
-                    q=self.sample_rate,
-                    noise_multiplier=self.noise_scale,
-                    steps=self.privacy_steps,
-                    orders=orders
-                )
-                eps, opt_order = self.get_privacy_spent_rdp(orders, rdp, self.delta)
-            elif self.noise_type == 'laplace':
-                eps = self.compute_eps_laplace_subsampled(
-                    q=self.sample_rate,
-                    noise_scale=self.noise_scale,
-                    steps=self.privacy_steps
-                )
-                opt_order = None
-            else:
-                raise ValueError(f"Unsupported noise type: {self.noise_type}")
-
+        if self.noise_scale > 0 and self.accountant is not None:
+            eps = self.accountant.get_epsilon(self.delta)
             self.epsilon_history.append(eps)
             self.log("epsilon", eps, on_epoch=True, prog_bar=True)
-            print(f"[{self.noise_type.upper()}] ε={eps:.4f} at δ={self.delta}, α={opt_order if opt_order else 'N/A'}")
+            print(f"[{self.noise_type.upper()}][Opacus] ε={eps:.4f} at δ={self.delta}")
 
     def on_train_end(self):
         n = min(len(self.epsilon_history), len(self.metric_history))
@@ -132,6 +151,7 @@ class CustomDP_SGD(BaseModel):
                 color='#1f77b4',
                 label='Validation RMSE'
             )
+            log_dir = "privacy_utility"
             plt.xlabel('Epsilon (ε)', fontsize=12)
             plt.ylabel('Validation RMSE', fontsize=12)
             plt.title('Privacy–Utility Trade-off Curve', fontsize=14)
@@ -139,7 +159,8 @@ class CustomDP_SGD(BaseModel):
             plt.legend()
             plt.tight_layout()
 
-            fname = f"privacy_tradeoff_{self.hparams.predict_file}.png"
+            fname = os.path.join(log_dir, f"privacy_utility_tradeoff_custom_mid.png")
+          
             plt.savefig(fname, dpi=300)
             wandb.save(fname)
             plt.close()
@@ -151,7 +172,7 @@ class CustomDP_SGD(BaseModel):
             if q == 0 or noise_multiplier == 0:
                 rdp.append(0 if q == 0 else float('inf'))
             else:
-                rdp_val = (q ** 2) * alpha / (2 * noise_multiplier ** 2)
+                rdp_val = (q ** 2) * alpha / (2 * (noise_multiplier ** 2))
                 rdp.append(rdp_val)
         return np.array(rdp) * steps
 

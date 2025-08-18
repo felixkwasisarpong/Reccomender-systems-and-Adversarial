@@ -1,0 +1,45 @@
+[rank: 0] Global seed set to 0
+wandb: WARNING `wandb.require('service')` is a no-op as it is now the default behavior.
+wandb: Currently logged in as: felixsarpong25 (felixsarpong25-student) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.21.0
+wandb: Run data is saved locally in ./lightning_logs/dpfm_adversarial_mid/wandb/run-20250815_180600-8ulu9m5v
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run models.DPFM_GANTrainer
+wandb: ⭐️ View project at https://wandb.ai/felixsarpong25-student/dp_fm
+wandb: 🚀 View run at https://wandb.ai/felixsarpong25-student/dp_fm/runs/8ulu9m5v
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+   | Name                 | Type               | Params
+-------------------------------------------------------------
+0  | user_embedding       | Embedding          | 11.3 K
+1  | item_embedding       | Embedding          | 20.2 K
+2  | gender_embedding     | Embedding          | 24    
+3  | occupation_embedding | Embedding          | 252   
+4  | age_projector        | Linear             | 24    
+5  | genre_projector      | Linear             | 240   
+6  | linear               | Linear             | 73    
+7  | mlp                  | Sequential         | 6.8 K 
+8  | output_layer         | Linear             | 35    
+9  | loss_fn              | SmoothL1Loss       | 0     
+10 | train_mse            | MeanSquaredError   | 0     
+11 | train_mae            | MeanAbsoluteError  | 0     
+12 | train_rmse           | MeanSquaredError   | 0     
+13 | val_mse              | MeanSquaredError   | 0     
+14 | val_mae              | MeanAbsoluteError  | 0     
+15 | val_rmse             | MeanSquaredError   | 0     
+16 | test_mse             | MeanSquaredError   | 0     
+17 | test_mae             | MeanAbsoluteError  | 0     
+18 | test_rmse            | MeanSquaredError   | 0     
+19 | repr_dropout         | Dropout            | 0     
+20 | multi_attr_adversary | MultiAttrAdversary | 20.4 K
+-------------------------------------------------------------
+59.3 K    Trainable params
+0         Non-trainable params
+59.3 K    Total params
+0.237     Total estimated model params size (MB)
+SLURM auto-requeueing enabled. Setting signal handlers.
+/var/spool/slurmd/job21009514/slurm_script: line 23:  9451 Bus error               (core dumped) python src/Train.py --config=cfgs/DPFM_GAN_mid/dpfm_gan.yaml --trainer=cfgs/DPFM_GAN_mid/trainer.yaml --data=cfgs/DPFM_GAN_mid/data_loader.yaml --seed_everything=0 --trainer.max_epochs=20 --seed_everything=0 --do_test=True --data.data_dir netflix_data

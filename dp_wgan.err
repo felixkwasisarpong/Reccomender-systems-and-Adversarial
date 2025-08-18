@@ -1,0 +1,30 @@
+[rank: 0] Global seed set to 0
+wandb: WARNING `wandb.require('service')` is a no-op as it is now the default behavior.
+wandb: Currently logged in as: felixsarpong25 (felixsarpong25-student) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.21.0
+wandb: Run data is saved locally in ./lightning_logs/Adv_strong/wandb/run-20250728_113235-ygcrtdki
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run models.WGAN
+wandb: ⭐️ View project at https://wandb.ai/felixsarpong25-student/dp_fm
+wandb: 🚀 View run at https://wandb.ai/felixsarpong25-student/dp_fm/runs/ygcrtdki
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+
+  | Name      | Type      | Params
+----------------------------------------
+0 | generator | Generator | 7.9 K 
+1 | critic    | Critic    | 5.9 K 
+----------------------------------------
+13.8 K    Trainable params
+0         Non-trainable params
+13.8 K    Total params
+0.055     Total estimated model params size (MB)
+SLURM auto-requeueing enabled. Setting signal handlers.
+Metric gen_loss improved. New best score: 0.120
+Metric gen_loss improved by 0.507 >= min_delta = 0.0001. New best score: -0.387
+Metric gen_loss improved by 0.132 >= min_delta = 0.0001. New best score: -0.519
+Metric gen_loss improved by 0.279 >= min_delta = 0.0001. New best score: -0.797
+`Trainer.fit` stopped: `max_epochs=20` reached.

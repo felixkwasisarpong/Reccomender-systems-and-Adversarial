@@ -45,6 +45,27 @@ movies = pd.read_csv(
 # === 3. Merge datasets ===
 df = ratings.merge(users, on='userId').merge(movies, on='movieId')
 
+# === 3.5 Remap userId and movieId to zero-based contiguous indices compatible with ML-100K limits ===
+# This remapping ensures compatibility with models trained on ML-100K embeddings.
+num_users_100k = 943
+num_items_100k = 1682
+
+# Map original userIds to zero-based indices
+unique_user_ids = df['userId'].unique()
+user_id_map = {old_id: new_id for new_id, old_id in enumerate(unique_user_ids)}
+df['userId'] = df['userId'].map(user_id_map)
+
+# For userIds exceeding ML-100K limit, remap to random valid ID within range
+df.loc[df['userId'] >= num_users_100k, 'userId'] = np.random.randint(0, num_users_100k, size=(df['userId'] >= num_users_100k).sum())
+
+# Map original movieIds to zero-based indices
+unique_movie_ids = df['movieId'].unique()
+movie_id_map = {old_id: new_id for new_id, old_id in enumerate(unique_movie_ids)}
+df['movieId'] = df['movieId'].map(movie_id_map)
+
+# For movieIds exceeding ML-100K limit, remap to random valid ID within range
+df.loc[df['movieId'] >= num_items_100k, 'movieId'] = np.random.randint(0, num_items_100k, size=(df['movieId'] >= num_items_100k).sum())
+
 # === 4. Encode features ===
 user_ids = df['userId'].astype(np.int32).values
 item_ids = df['movieId'].astype(np.int32).values

@@ -8,7 +8,29 @@ model:
     lr: 1e-6
     n_critic: 5
     lambda_gp: 0.5
-    pred_file: "DP_weak"  # Name of the prediction file for attack  
+    pred_file: "opacus_weak"  # Name of the prediction file for attack
+
+    # How many synthetic samples to draw for evaluation/plots at the end
+    num_attack_samples: 10000
+
+    # If you pass a condition vector during training, set cond_dim>0
+    cond_dim: 0
+
+    # Optional exploitation loss against a target model (leave 0.0 if unused)
+    lambda_exploit: 0.2
+
+    # -----------------------------
+    # Conditional-KL panel settings
+    # -----------------------------
+    # Assumed 25-d vector layout:
+    #   [0] user_id, [1] item_id, [2] age, [3] gender, [4] occupation,
+    #   [5..23] genres (19 dims), [24] pred_rating
+    # If your layout differs, update these indices accordingly.
+    condkl_gender_col: 2
+    condkl_age_col: 3
+    condkl_occupation_col: 4
+    condkl_num_occupations: 21
+    condkl_age_bins: 30
 
 do_train: false
 do_validate: false

@@ -1,0 +1,65 @@
+seed_everything: 0
+
+model:
+  class_path: models.DPFM_GANTrainer
+  init_args:
+    # Dataset sizes
+    num_users: 943
+    num_items: 1682
+    num_genders: 2
+    num_occupations: 21
+    genre_dim: 19
+    
+    # Architecture
+    embed_dim: 12
+    mlp_dims: [64, 32]
+    dropout: 0.2
+    use_attrs: true
+    
+    # Adversarial architecture
+    adv_all_hidden_dims: [128, 64]
+    
+    # Adversarial training schedule
+    adv_start_epoch: 2
+    adv_ramp_epochs: 5
+    adv_lambda_start: 0.15
+    adv_lambda_end: 0.45
+    adv_lambda_cap: 0.6
+    adv_update_freq: 1
+    
+    # Privacy and regularization
+    repr_dropout: 0.05
+    
+    # Training parameters
+    learning_rate: 1e-3
+    l2_penalty: 1e-4
+    loss_function: "Huber"
+    
+    # Output clamping
+    target_min: 1.0
+    target_max: 5.0
+    
+    # Differential Privacy (DP) - Updated for compatibility
+
+    noise_multiplier: 1.12     # Slightly higher for stability  target_epsilon: 10.0       # More conservative epsilon value
+    
+
+    
+
+    predict_file: "Adv_mid"
+
+
+ 
+
+
+
+
+
+
+# Lightning execution flow flags
+do_train: true
+do_test: true
+do_predict: false
+do_validate: true  # Important for DP monitoring
+do_analyze: false
+

@@ -18,6 +18,7 @@ class BaseModel(pl.LightningModule):
         dropout=0.2,
         learning_rate=1e-3,
         l2_penalty=1e-4,
+        
         loss_function="MSE",
         target_min=1.0,
         target_max=5.0,
@@ -137,5 +138,5 @@ class BaseModel(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate, weight_decay=self.hparams.l2_penalty)
-        scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=2, verbose=True)
+        scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=2)
         return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
