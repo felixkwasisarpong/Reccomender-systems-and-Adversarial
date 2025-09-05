@@ -18,28 +18,44 @@ class BaseModel(pl.LightningModule):
         dropout=0.2,
         learning_rate=1e-3,
         l2_penalty=1e-4,
-        
         loss_function="MSE",
         target_min=1.0,
         target_max=5.0,
         predict_file="predictions",
+        clamp_outputs=True,
         use_attrs=True,
+        use_gender=True,
+        use_occupation=True,
+        use_age=True,
+        use_genre=True,
     ):
         super().__init__()
         self.save_hyperparameters()
         self.use_attrs = use_attrs
+        # Attribute toggles (allow genre-free setups)
+        self.use_gender = use_attrs and use_gender
+        self.use_occupation = use_attrs and use_occupation
+        self.use_age = use_attrs and use_age
+        self.use_genre = use_attrs and use_genre and (genre_dim is not None and genre_dim > 0)
+
         self.embed_dim = embed_dim
+        self.clamp_outputs = clamp_outputs
 
         self.user_embedding = nn.Embedding(num_users, embed_dim)
         self.item_embedding = nn.Embedding(num_items, embed_dim)
 
-        # Always define attr layers
-        self.gender_embedding = nn.Embedding(num_genders, embed_dim)
-        self.occupation_embedding = nn.Embedding(num_occupations, embed_dim)
-        self.age_projector = nn.Linear(1, embed_dim)
-        self.genre_projector = nn.Linear(genre_dim, embed_dim)
+        # Define attribute layers conditionally
+        if self.use_gender:
+            self.gender_embedding = nn.Embedding(num_genders, embed_dim)
+        if self.use_occupation:
+            self.occupation_embedding = nn.Embedding(num_occupations, embed_dim)
+        if self.use_age:
+            self.age_projector = nn.Linear(1, embed_dim)
+        if self.use_genre:
+            self.genre_projector = nn.Linear(genre_dim, embed_dim)
 
-        self.num_fields = 2 + (4 if self.use_attrs else 0)
+        attr_count = int(self.use_gender) + int(self.use_occupation) + int(self.use_age) + int(self.use_genre)
+        self.num_fields = 2 + attr_count
         input_dim = embed_dim * self.num_fields
 
         self.linear = nn.Linear(input_dim, 1)
@@ -66,19 +82,38 @@ class BaseModel(pl.LightningModule):
         item_embed = self.item_embedding(batch['item_id'])
         features = [user_embed, item_embed]
 
-        if self.use_attrs:
+        if self.use_gender:
+            if 'gender' not in batch:
+                raise KeyError("'gender' missing from batch while use_gender=True")
             gender_embed = self.gender_embedding(batch['gender'])
-            occupation_embed = self.occupation_embedding(batch['occupation'])
-            age = batch['age'].unsqueeze(-1) if batch['age'].dim() == 1 else batch['age']
-            age_embed = nn.functional.normalize(self.age_projector(age), dim=1)
-            genre_embed = nn.functional.normalize(self.genre_projector(batch['genre']), dim=1)
+            features.append(gender_embed)
 
-            features += [gender_embed, occupation_embed, age_embed, genre_embed]
+        if self.use_occupation:
+            if 'occupation' not in batch:
+                raise KeyError("'occupation' missing from batch while use_occupation=True")
+            occupation_embed = self.occupation_embedding(batch['occupation'])
+            features.append(occupation_embed)
+
+        if self.use_age:
+            if 'age' not in batch:
+                raise KeyError("'age' missing from batch while use_age=True")
+            age = batch['age']
+            if age.dim() == 1:
+                age = age.unsqueeze(-1)
+            age_embed = nn.functional.normalize(self.age_projector(age.float()), dim=1)
+            features.append(age_embed)
+
+        if self.use_genre:
+            if 'genre' not in batch:
+                raise KeyError("'genre' missing from batch while use_genre=True")
+            genre_embed = nn.functional.normalize(self.genre_projector(batch['genre'].float()), dim=1)
+            features.append(genre_embed)
 
         try:
             features = torch.stack(features, dim=1)
         except RuntimeError as e:
-            raise RuntimeError(f"Feature stack failed: {[(f.shape if hasattr(f, 'shape') else 'N/A') for f in features]} | {e}")
+            shapes = [(f.shape if hasattr(f, 'shape') else 'N/A') for f in features]
+            raise RuntimeError(f"Feature stack failed; collected {len(features)} fields with shapes: {shapes}. Error: {e}")
 
         B, F, D = features.size()
         linear_term = self.linear(features.view(B, -1))
@@ -91,12 +126,32 @@ class BaseModel(pl.LightningModule):
         deep_out = self.mlp(mlp_input)
         concat = torch.cat([linear_term, bi_interaction, deep_out], dim=1)
         preds = self.output_layer(concat).squeeze(-1)
-        return torch.clamp(preds, self.hparams.target_min, self.hparams.target_max)
+        if self.clamp_outputs:
+            preds = torch.clamp(preds, self.hparams.target_min, self.hparams.target_max)
+        return preds
+
+    def _debug_range(self, preds, targets):
+        try:
+            return (
+                float(preds.min().detach().cpu()),
+                float(preds.max().detach().cpu()),
+                float(targets.min().detach().cpu()),
+                float(targets.max().detach().cpu()),
+            )
+        except Exception:
+            return (None, None, None, None)
 
     def _shared_step(self, batch, batch_idx, phase):
         preds = self(batch)
         targets = batch['rating']
         loss = self.loss_fn(preds, targets)
+        if batch_idx == 0:
+            pmin, pmax, tmin, tmax = self._debug_range(preds, targets)
+            if pmin is not None:
+                self.log(f"{phase}_pred_min", pmin, prog_bar=False)
+                self.log(f"{phase}_pred_max", pmax, prog_bar=False)
+                self.log(f"{phase}_tgt_min", tmin, prog_bar=False)
+                self.log(f"{phase}_tgt_max", tmax, prog_bar=False)
         self.log(f"{phase}_loss", loss, prog_bar=True)
         getattr(self, f"{phase}_mse").update(preds, targets)
         getattr(self, f"{phase}_mae").update(preds, targets)

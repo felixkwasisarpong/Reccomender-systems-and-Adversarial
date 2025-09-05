@@ -29,6 +29,9 @@ class DPFMMembershipInferenceAttack(DPFM_GANTrainer):
         # By convention, label 1 == member (positive class)
         self.pos_label = 1
         self._scores_inverted = False
+        # Diagnostics: store abs errors by group
+        self._member_abs_err = []
+        self._nonmember_abs_err = []
 
     def forward(self, batch):
         return super().forward(batch)
@@ -142,6 +145,24 @@ class DPFMMembershipInferenceAttack(DPFM_GANTrainer):
             self.log("batch_confidence", confidence_scores.mean(), on_step=False, on_epoch=True)
             self.log("batch_loss_score", loss_scores.mean(), on_step=False, on_epoch=True)
 
+        # Diagnostics: MAE by group
+        with torch.no_grad():
+            abs_err = (preds - targets).abs()
+            if member_mask.any():
+                mae_m = abs_err[member_mask].mean()
+                self._member_abs_err.append(float(mae_m.detach().cpu()))
+                try:
+                    self.log("mia/batch_member_mae", mae_m, on_step=False, on_epoch=True)
+                except Exception:
+                    pass
+            if nonmember_mask.any():
+                mae_n = abs_err[nonmember_mask].mean()
+                self._nonmember_abs_err.append(float(mae_n.detach().cpu()))
+                try:
+                    self.log("mia/batch_nonmember_mae", mae_n, on_step=False, on_epoch=True)
+                except Exception:
+                    pass
+
     def on_test_epoch_end(self):
         if not self.scores or len(set(self.labels)) < 2:
             print("Warning: Insufficient data for MIA evaluation")
@@ -232,12 +253,18 @@ class DPFMMembershipInferenceAttack(DPFM_GANTrainer):
                 print("  Note: Scores were inverted for metrics because non-members had higher mean scores.")
 
         # Call plot function with predictions
-        self.create_comprehensive_plots(
+        self._create_comprehensive_plots(
             auc, fpr, tpr, precision, recall,
             ap_score, optimal_threshold, predictions
         )
 
         self.clear_all_scores()
+        # Print final MAE diagnostics
+        if self._member_abs_err and self._nonmember_abs_err:
+            m_mae = float(np.mean(self._member_abs_err))
+            n_mae = float(np.mean(self._nonmember_abs_err))
+            print(f"[MIA][diag] mean MAE — members={m_mae:.4f}, nonmembers={n_mae:.4f}, Δ={m_mae - n_mae:.4f}")
+        self._member_abs_err.clear(); self._nonmember_abs_err.clear()
 
     def create_comprehensive_plots(self, auc, fpr, tpr, precision, recall,
                                     ap_score, optimal_threshold, predictions):
@@ -375,22 +402,97 @@ class DPFMMembershipInferenceAttack(DPFM_GANTrainer):
         self.confidence_scores.clear()
         self.loss_scores.clear()
         self.entropy_scores.clear()
+        
+    def _create_comprehensive_plots(self, auc, fpr, tpr, precision, recall, ap_score, optimal_threshold, predictions):
+        y_true = np.asarray(self.labels, dtype=int)
+        y_score = np.asarray(self.scores, dtype=float)
+        scores_for_metrics = 1.0 - y_score if self._scores_inverted else y_score
 
+        # Always create a single ROC plot with AUC and optimal Youden point
+        os.makedirs("mia_results", exist_ok=True)
+        plt.figure(figsize=(6, 5))
+        plt.plot(fpr, tpr, linewidth=3, label=f"ROC (AUC = {auc:.3f})")
+        plt.plot([0, 1], [0, 1], linestyle="--", linewidth=2, alpha=0.7, label="Random (AUC = 0.5)")
+        j_idx = int(np.argmax(tpr - fpr))
+        plt.scatter(fpr[j_idx], tpr[j_idx], s=80, zorder=5, label="Optimal point")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve - Membership Inference Attack")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.xlim([0, 1])
+        plt.ylim([0, 1])
+        plt.tight_layout()
+        plt.savefig(f"mia_results/roc_only_{getattr(self.hparams, 'predict_file', 'predictions')}.png", dpi=400, bbox_inches='tight', facecolor='white')
+        plt.close()
     @classmethod
     def load_from_dp_checkpoint(cls, checkpoint_path, **override_kwargs):
-        """Load model from a DPFM_GANTrainer checkpoint"""
-        import torch
-        import inspect
-        
         ckpt = torch.load(checkpoint_path, map_location="cpu")
-        raw_hparams = ckpt["hyper_parameters"]
-        raw_hparams = {**raw_hparams, **override_kwargs}
-        
-        sig_dp = inspect.signature(DPFM_GANTrainer.__init__)
-        allowed = set(sig_dp.parameters) - {"self"}
-        init_kwargs = {k: v for k, v in raw_hparams.items() if k in allowed}
-        
+        raw = ckpt.get("hyper_parameters", {}) or {}
+
+        # Some checkpoints store params under 'init_args'
+        if isinstance(raw, dict) and "init_args" in raw and isinstance(raw["init_args"], dict):
+            raw = raw["init_args"]
+
+        # Strip Lightning/Trainer artifacts and private keys
+        forbidden = {
+            "_class_path", "class_path", "_target", "_init_args", "init_args",
+            "_lightning_module", "_recursive", "_convert_", "_kwargs_",
+        }
+        base = {k: v for k, v in raw.items() if not k.startswith("_") and k not in forbidden}
+
+        # Provide dataset defaults if missing
+        defaults = dict(
+            num_users=943,
+            num_items=1682,
+            num_genders=2,
+            num_occupations=21,
+            genre_dim=19,
+        )
+
+        # Map common aliases from older checkpoints
+        alias = {
+            "n_users": "num_users",
+            "n_items": "num_items",
+            "n_genders": "num_genders",
+            "n_occupations": "num_occupations",
+            "genre_size": "genre_dim",
+            "embedding_dim": "embed_dim",
+        }
+        for old, new in alias.items():
+            if old in base and new not in base:
+                base[new] = base.pop(old)
+
+        # Allowed constructor args for DPFM_GANTrainer/BaseModel family
+        allowed = {
+            # dataset/structure
+            "num_users", "num_items", "num_genders", "num_occupations", "genre_dim",
+            # architecture
+            "embed_dim", "mlp_dims", "dropout", "use_attrs",
+            # adversarial
+            "adv_all_hidden_dims", "adv_start_epoch", "adv_ramp_epochs",
+            "adv_lambda_start", "adv_lambda_end", "adv_lambda_cap", "adv_update_freq",
+            # regularization/calibration
+            "repr_dropout", "l2_penalty", "loss_function",
+            # training
+            "learning_rate",
+            # output
+            "target_min", "target_max", "predict_file",
+            # dp args
+            "enable_dp", "target_epsilon", "target_delta", "max_grad_norm",
+            "noise_multiplier",
+        }
+
+        # Build init kwargs from defaults + sanitized base + user overrides
+        merged = {**defaults, **base, **override_kwargs}
+        init_kwargs = {k: merged[k] for k in list(merged.keys()) if k in allowed}
+
+        # Instantiate and load weights
         model = cls(**init_kwargs)
-        model.load_state_dict(ckpt["state_dict"], strict=False)
-        
+        state_dict = ckpt.get("state_dict", {})
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        if missing:
+            print("[MIA] Missing keys:", missing[:10], "...")
+        if unexpected:
+            print("[MIA] Unexpected keys (ignored):", unexpected[:10], "...")
         return model

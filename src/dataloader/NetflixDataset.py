@@ -20,7 +20,8 @@ class NetflixDataset(Dataset):
         random_state=42,
         return_attrs: bool = True,
         plot_eda: bool = False,
-        eda_out_dir: str = "./eda"
+        eda_out_dir: str = "./eda",
+        
     ):
         super().__init__()
         self.h5_path = h5_path
@@ -71,7 +72,16 @@ class NetflixDataset(Dataset):
                     self.has_attrs = True
                 else:
                     self.has_attrs = False
-
+        print(
+            f"[NetflixDataset] {self.h5_path}\n"
+            f"  user_id:   {self.user_ids_all.min()} .. {self.user_ids_all.max()}\n"
+            f"  movie_id:  {self.movie_ids_all.min()} .. {self.movie_ids_all.max()}\n"
+            f"  rating:    {self.ratings_all.min()} .. {self.ratings_all.max()}\n"
+            f"  gender:    {np.unique(self.gender_all)}\n"
+            f"  age:       {self.age_all.min()} .. {self.age_all.max()}\n"
+            f"  occ:       {self.occupation_all.min()} .. {self.occupation_all.max()}\n"
+            f"  genre dim: {self.genre_all.shape}"
+        )
 
         indices = np.arange(len(self.user_ids_all))
         rng = np.random.default_rng(self.random_state)
@@ -87,9 +97,14 @@ class NetflixDataset(Dataset):
         if max_samples is not None and max_samples > 0:
             indices = indices[:max_samples]
 
-        self.user_ids = self.user_ids_all[indices]
-        self.movie_ids = self.movie_ids_all[indices]
+        # Keep raw/original IDs for cross-dataset identity (useful for MIA)
+        self.user_ids_raw = self.user_ids_all[indices]
+        self.movie_ids_raw = self.movie_ids_all[indices]
         self.ratings = self.ratings_all[indices]
+
+        # Start from raw ids for local reindexing used in model inputs
+        self.user_ids = self.user_ids_raw.copy()
+        self.movie_ids = self.movie_ids_raw.copy()
 
         if self.has_attrs:
             self.genders = self.gender_all[indices]
@@ -106,6 +121,8 @@ class NetflixDataset(Dataset):
         return {
             'user_id': torch.tensor(self.user_ids[idx], dtype=torch.long),
             'item_id': torch.tensor(self.movie_ids[idx], dtype=torch.long),
+            'raw_user_id': torch.tensor(self.user_ids_raw[idx], dtype=torch.long),
+            'raw_item_id': torch.tensor(self.movie_ids_raw[idx], dtype=torch.long),
             'gender': torch.tensor(self.genders[idx], dtype=torch.long),
             'age': torch.tensor(self.ages[idx], dtype=torch.float32),
             'occupation': torch.tensor(self.occupations[idx], dtype=torch.long),

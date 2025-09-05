@@ -3,8 +3,8 @@ seed_everything: 0
 model:
   class_path: models.DPModel
   init_args:
-    num_users: 943
-    num_items: 1682
+    num_users: 6040
+    num_items: 3952
     embed_dim: 32            # replace with dataset.get_vocab_sizes()['num_items']
     num_genders: 2               # typically 0 (F), 1 (M)
     num_occupations: 21          # number of unique occupation categories
@@ -17,6 +17,7 @@ model:
     target_min:    1.0
     target_max:    5.0
     use_attrs:     true
+    use_genre:     true
     predict_file: "opacus_strong"  # Name of the file to save predictions
 
     # DP args

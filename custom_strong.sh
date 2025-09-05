@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Custom_Dp_FM        # Job name
+#SBATCH --job-name=Custom_Dp_str        # Job name
 #SBATCH --nodes=1                   # Number of nodes
-#SBATCH --ntasks-per-node=40         # Number of CPUs per node
+#SBATCH --ntasks-per-node=25         # Number of CPUs per node
 #SBATCH --gres=gpu:1                 # Number of GPUs per node
 #SBATCH --partition=matador          # Partition name
 #SBATCH --time=20:00:00               # Time limit (2 hours)

@@ -1,4 +1,4 @@
 data_dir: DATA_DIR_PATH
-batch_size: 256
-num_workers: 10
-pred_file: "Adv_strong"  # Name of the prediction file for attack
+batch_size: 1024
+num_workers: 38
+pred_file: "opacus_strong"  # Name of the prediction file for attack

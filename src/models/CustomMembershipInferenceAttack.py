@@ -49,6 +49,20 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         self.pos_label = 1
         self._scores_inverted = False   # whether we flipped scores (non-member mean > member mean)
 
+    # --- helpers ---
+    def _safe_range(self):
+        tmin = float(getattr(self.hparams, "target_min", 0.0))
+        tmax = float(getattr(self.hparams, "target_max", 1.0))
+        if not np.isfinite(tmin) or not np.isfinite(tmax) or tmax <= tmin:
+            # sensible default for rating-like tasks
+            tmin, tmax = 0.0, 5.0
+        return tmin, tmax
+
+    def _pred_tag(self):
+        # Prefer pred_file; fall back to predict_file; then default
+        return getattr(self.hparams, "pred_file",
+               getattr(self.hparams, "predict_file", "predictions"))
+
     # ---------------------------
     # Signal builders
     # ---------------------------
@@ -56,8 +70,7 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         """Higher is more likely member.
         Based on normalized absolute error with an exponential transform.
         """
-        tmin = float(self.hparams.target_min)
-        tmax = float(self.hparams.target_max)
+        tmin, tmax = self._safe_range()
         denom = max(1e-12, (tmax - tmin))
         preds_norm = (preds - tmin) / denom
         targets_norm = (targets - tmin) / denom
@@ -79,8 +92,7 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         """Entropy proxy from normalized scalar predictions in [0,1]. Lower entropy ⇒ member.
         We map to membership via exp(-entropy).
         """
-        tmin = float(self.hparams.target_min)
-        tmax = float(self.hparams.target_max)
+        tmin, tmax = self._safe_range()
         denom = max(1e-12, (tmax - tmin))
         p = (preds - tmin) / denom
         p = torch.clamp(p, 1e-2, 1 - 1e-2)
@@ -100,9 +112,8 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         labels = batch["label"].long().view(-1)  # 1=member, 0=non-member
 
         # Respect use_attrs, mirroring training inputs
-        if getattr(self.hparams, "use_attrs", False) and all(
-            k in batch for k in ("gender", "age", "occupation", "genre")
-        ):
+        use_attrs = bool(getattr(self.hparams, "use_attrs", False))
+        if use_attrs and all(k in batch for k in ("gender", "age", "occupation", "genre")):
             model_in = {
                 "user_id": batch["user_id"],
                 "item_id": batch["item_id"],
@@ -127,8 +138,12 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         loss_s = self.compute_loss_based_score(preds, targets)
         entr = self.compute_prediction_entropy(preds)
 
-        # Static-weight ensemble
-        ensemble = 0.4 * conf + 0.4 * loss_s + 0.2 * entr
+        # Weighted ensemble
+        w_conf = float(getattr(self.hparams, "mia_w_conf", 0.4))
+        w_loss = float(getattr(self.hparams, "mia_w_loss", 0.4))
+        w_ent  = float(getattr(self.hparams, "mia_w_ent",  0.2))
+        w_sum = max(1e-6, (w_conf + w_loss + w_ent))
+        ensemble = (w_conf * conf + w_loss * loss_s + w_ent * entr) / w_sum
 
         # Persist per-batch scores
         self.confidence_scores.extend(conf.detach().cpu().tolist())
@@ -157,6 +172,11 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
 
         y_true = np.asarray(self.labels, dtype=int)
         y_score_raw = np.asarray(self.scores, dtype=float)
+
+        if y_true.ndim != 1 or y_score_raw.ndim != 1 or y_true.size == 0 or y_true.size != y_score_raw.size:
+            print("[MIA] Shape mismatch or empty arrays; skipping metrics.")
+            self.clear_all_scores()
+            return
 
         # Orient scores so that higher ⇒ member
         scores_for_metrics = y_score_raw.copy()
@@ -226,7 +246,7 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         self._create_comprehensive_plots(
             auc, fpr, tpr, prec, rec, ap, opt_thr, preds_opt
         )
-        self._dump_scores_csv()
+        #self._dump_scores_csv()
 
         # clear for next run
         self.clear_all_scores()
@@ -254,11 +274,11 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         plt.xlim([0, 1])
         plt.ylim([0, 1])
         plt.tight_layout()
-        plt.savefig(f"mia_results/roc_only_{getattr(self.hparams, 'predict_file', 'predictions')}.png", dpi=400, bbox_inches='tight', facecolor='white')
+        plt.savefig(f"mia_results/roc_only_{self._pred_tag()}.png", dpi=400, bbox_inches='tight', facecolor='white')
         plt.close()
 
         # Also generate signal-wise histograms
-        self._create_signal_analysis_plot()
+        #self._create_signal_analysis_plot()
 
     def _create_signal_analysis_plot(self):
         if not (self.confidence_scores and self.loss_scores and self.entropy_scores):
@@ -288,7 +308,7 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
                 ax.legend()
                 ax.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.savefig(f"mia_results/signal_analysis_{getattr(self.hparams, 'predict_file', 'predictions')}.png", dpi=300, bbox_inches='tight', facecolor='white')
+        plt.savefig(f"mia_results/signal_analysis_{self._pred_tag()}.png", dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
 
     def _dump_scores_csv(self):
@@ -296,7 +316,7 @@ class CustomMembershipInferenceAttack(CustomDP_SGD):
         try:
             import csv
             os.makedirs("mia_results", exist_ok=True)
-            path = os.path.join("mia_results", f"scores_{getattr(self.hparams, 'predict_file', 'predictions')}.csv")
+            path = os.path.join("mia_results", f"scores_{self._pred_tag()}.csv")
             with open(path, "w", newline="") as f:
                 w = csv.writer(f)
                 w.writerow(["label", "ensemble", "confidence", "loss_based", "entropy", "inverted"]) 

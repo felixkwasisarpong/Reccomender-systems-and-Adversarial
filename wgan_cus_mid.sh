@@ -1,8 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=wgan_cus_mid        # Job name
-#SBATCH --nodes=1                   # Number of nodes
-#SBATCH --ntasks-per-node=40         # Number of CPUs per node
-#SBATCH --gres=gpu:1                 # Number of GPUs per node
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1          # 1 process (don’t oversubscribe GPUs)
+#SBATCH --cpus-per-task=2           # all 40 CPUs feed your dataloaders
+#SBATCH --gpus-per-node=1            # 2 GPUs on the node
+#SBATCH --mem=0                      # full node memory (or set explicitly if needed)
 #SBATCH --partition=matador          # Partition name
 #SBATCH --time=20:00:00               # Time limit (2 hours)
 #SBATCH --output=cus_mid.log          # Output log file
@@ -20,4 +22,4 @@ module load cuda/11.0          # Adjust based on the available CUDA version
 
 conda activate wildfire
 
-python src/Train.py --config=cfgs/wgan_cus_mid/gan.yaml --trainer=cfgs/wgan_cus_mid/trainer.yaml --data=cfgs/wgan_cus_mid/data_loader.yaml  --seed_everything=0 --trainer.max_epochs=50 --do_attack=True --do_train=False --do_validate=False --do_test=False --data.data_dir predicted_data
+python src/Train.py --config=cfgs/wgan_cus_mid/gan.yaml --trainer=cfgs/wgan_cus_mid/trainer.yaml --data=cfgs/wgan_cus_mid/data_loader.yaml  --seed_everything=0 --trainer.max_epochs=200 --do_attack=True --do_train=False --do_validate=False --do_test=False --data.data_dir predicted_data

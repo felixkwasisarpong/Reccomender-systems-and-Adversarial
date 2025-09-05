@@ -138,6 +138,7 @@ class DPFM_GANTrainer(BaseModel):
         dp_microbatch_size: int = 1,
         accountant: Any = None,
         delta: float = 1e-5,
+        adv_conf_weight_base: float = 1e-3,   # <-- add this
         log_freq: int = 50,
         **kwargs,
     ):
@@ -151,6 +152,7 @@ class DPFM_GANTrainer(BaseModel):
         self.accountant = accountant
         self.delta = float(delta)
         self.log_freq = int(log_freq)
+        self.adv_conf_weight_base = float(adv_conf_weight_base)
         self.sample_rate = None
         self.privacy_steps = 0
         self.epsilon_history = []
@@ -171,7 +173,9 @@ class DPFM_GANTrainer(BaseModel):
         self._step_count = 0
 
         # --- Multi-attribute adversary ---
-        num_fields = 2 + (4 if self.use_attrs else 0)  # 2 base (user, item) + 4 attrs (gender, occupation, age, genre) if enabled
+        # Match BaseModel's enabled attribute set to avoid shape/attribute mismatches
+        attr_count = int(self.use_gender) + int(self.use_occupation) + int(self.use_age) + int(self.use_genre)
+        num_fields = 2 + attr_count
         adv_in_dim = self.embed_dim * num_fields
         self.multi_attr_adversary = MultiAttrAdversary(
             in_dim=adv_in_dim,
@@ -202,26 +206,51 @@ class DPFM_GANTrainer(BaseModel):
         user_embed = self.user_embedding(batch['user_id'])
         item_embed = self.item_embedding(batch['item_id'])
         features = [user_embed, item_embed]
-        if self.use_attrs:
+        # Append only enabled attributes (aligned with BaseModel)
+        if self.use_gender:
             gender_embed = self.gender_embedding(batch['gender'])
+            features.append(gender_embed)
+        if self.use_occupation:
             occupation_embed = self.occupation_embedding(batch['occupation'])
-            age = batch['age'].unsqueeze(-1) if batch['age'].dim() == 1 else batch['age']
-            age_embed = F.normalize(self.age_projector(age), dim=1)
-            genre_embed = F.normalize(self.genre_projector(batch['genre']), dim=1)
-            features.extend([gender_embed, occupation_embed, age_embed, genre_embed])
+            features.append(occupation_embed)
+        if self.use_age:
+            age = batch['age']
+            if age.dim() == 1:
+                age = age.unsqueeze(-1)
+            age_embed = F.normalize(self.age_projector(age.float()), dim=1)
+            features.append(age_embed)
+        if self.use_genre:
+            # Prefer projector if defined; otherwise assume genre already in embedding space
+            if hasattr(self, 'genre_projector'):
+                genre_embed = F.normalize(self.genre_projector(batch['genre'].float()), dim=1)
+            else:
+                genre_embed = F.normalize(batch['genre'].float(), dim=1)
+            features.append(genre_embed)
         return torch.stack(features, dim=1)
 
     def _build_features(self, batch) -> torch.Tensor:
         user_embed = self.user_embedding(batch['user_id'])
         item_embed = self.item_embedding(batch['item_id'])
         features = [user_embed, item_embed]
-        if self.use_attrs:
+        # Append only enabled attributes (aligned with BaseModel)
+        if self.use_gender:
             gender_embed = self.gender_embedding(batch['gender'])
+            features.append(gender_embed)
+        if self.use_occupation:
             occupation_embed = self.occupation_embedding(batch['occupation'])
-            age = batch['age'].unsqueeze(-1) if batch['age'].dim() == 1 else batch['age']
-            age_embed = F.normalize(self.age_projector(age), dim=1)
-            genre_embed = F.normalize(self.genre_projector(batch['genre']), dim=1)
-            features.extend([gender_embed, occupation_embed, age_embed, genre_embed])
+            features.append(occupation_embed)
+        if self.use_age:
+            age = batch['age']
+            if age.dim() == 1:
+                age = age.unsqueeze(-1)
+            age_embed = F.normalize(self.age_projector(age.float()), dim=1)
+            features.append(age_embed)
+        if self.use_genre:
+            if hasattr(self, 'genre_projector'):
+                genre_embed = F.normalize(self.genre_projector(batch['genre'].float()), dim=1)
+            else:
+                genre_embed = F.normalize(batch['genre'].float(), dim=1)
+            features.append(genre_embed)
         return torch.stack(features, dim=1)
 
     def _predict_from_features(self, features: torch.Tensor) -> torch.Tensor:
@@ -237,19 +266,42 @@ class DPFM_GANTrainer(BaseModel):
         return torch.clamp(preds, self.hparams.target_min, self.hparams.target_max)
 
     def _compute_entropy_losses(self, logits: Dict[str, torch.Tensor]) -> torch.Tensor:
-        # Gender entropy (categorical)
-        p_gender = F.softmax(logits['gender'], dim=-1)
-        ent_gender = -(p_gender * torch.log(p_gender.clamp_min(1e-8))).sum(dim=-1).mean()
-        # Occupation entropy (categorical)
-        p_occupation = F.softmax(logits['occupation'], dim=-1)
-        ent_occupation = -(p_occupation * torch.log(p_occupation.clamp_min(1e-8))).sum(dim=-1).mean()
-        # Genre entropy (multi-label binary)
-        p_genre = torch.sigmoid(logits['genre'])
-        ent_genre = -(
-            p_genre * torch.log(p_genre.clamp_min(1e-8)) +
-            (1 - p_genre) * torch.log((1 - p_genre).clamp_min(1e-8))
-        ).mean()
-        return ent_gender + ent_occupation + ent_genre
+        total = 0.0
+        n = 0
+        if self.use_gender and 'gender' in logits:
+            p_gender = F.softmax(logits['gender'], dim=-1)
+            ent_gender = -(p_gender * torch.log(p_gender.clamp_min(1e-8))).sum(dim=-1).mean()
+            total = total + ent_gender
+            n += 1
+        if self.use_occupation and 'occupation' in logits:
+            p_occupation = F.softmax(logits['occupation'], dim=-1)
+            ent_occupation = -(p_occupation * torch.log(p_occupation.clamp_min(1e-8))).sum(dim=-1).mean()
+            total = total + ent_occupation
+            n += 1
+        if self.use_genre and 'genre' in logits:
+            p_genre = torch.sigmoid(logits['genre'])
+            ent_genre = -(
+                p_genre * torch.log(p_genre.clamp_min(1e-8)) +
+                (1 - p_genre) * torch.log((1 - p_genre).clamp_min(1e-8))
+            ).mean()
+            total = total + ent_genre
+            n += 1
+        if self.use_age and 'age' in logits:
+            # Encourage wide age predictions by maximizing variance (equiv. to entropy for Gaussian)
+            # Here, approximate with negative L2 magnitude to avoid trivial 0.
+            ent_age = -torch.mean(logits['age'].squeeze() ** 2)
+            total = total + ent_age
+            n += 1
+        return total if n > 0 else torch.tensor(0.0, device=self.device)
+
+    def _prediction_confidence_penalty(self, preds: torch.Tensor) -> torch.Tensor:
+        """Entropy penalty on bounded predictions to discourage overconfident outputs (helps lower MIA).
+        Maps prediction range [target_min, target_max] → [0,1] and applies binary entropy.
+        """
+        p = (preds - self.hparams.target_min) / (self.hparams.target_max - self.hparams.target_min)
+        p = torch.clamp(p, 1e-6, 1 - 1e-6)
+        ent = -(p * torch.log(p) + (1 - p) * torch.log(1 - p))
+        return ent.mean()
 
     def _update_lambda_schedule(self):
         e = int(self.current_epoch)
@@ -261,6 +313,21 @@ class DPFM_GANTrainer(BaseModel):
         else:
             lam = self.adv_lambda_end
         self._lambda_adv = min(float(lam), self.adv_lambda_cap)
+
+    def _noise_adapt(self, lam: float) -> float:
+        """Scale adversarial weight by a tempered inverse noise.
+        Instead of lam / noise, use lam / (1 + noise) to avoid over-dampening at large noise.
+        Capped by adv_lambda_cap for stability.
+        """
+        scale = 1.0 / (1.0 + max(float(self.noise_multiplier), 0.0))
+        lam_eff = float(lam) * scale
+        return float(min(lam_eff, self.adv_lambda_cap))
+    
+    def _conf_weight(self) -> float:
+        """Noise-aware weight for the prediction confidence penalty.
+        Higher DP noise -> smaller penalty weight to protect utility.
+        """
+        return float(self.adv_conf_weight_base) / (1.0 + max(float(self.noise_multiplier), 0.0))
         
     def _set_requires_grad(self, module: nn.Module, flag: bool) -> None:
         """Enable/disable gradients for all parameters in a module."""
@@ -271,6 +338,14 @@ class DPFM_GANTrainer(BaseModel):
             super().on_train_epoch_start()
         self._update_lambda_schedule()
         self.log("lambda_adv", self._lambda_adv, prog_bar=True)
+        try:
+            self.log("lambda_adv_eff", self._noise_adapt(self._lambda_adv), prog_bar=True)
+        except Exception:
+            pass
+        try:
+            self.log("conf_weight", torch.tensor(self._conf_weight(), dtype=torch.float32, device=self.device), prog_bar=False)
+        except Exception:
+            pass
 
     def on_fit_start(self):
         try:
@@ -279,6 +354,9 @@ class DPFM_GANTrainer(BaseModel):
             pass
         try:
             if torch.cuda.is_available():
+                # Enable TF32 where available for speed, keep determinism relaxed for DP noise use
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
                 torch.backends.cudnn.benchmark = True
         except Exception:
             pass
@@ -290,81 +368,149 @@ class DPFM_GANTrainer(BaseModel):
         """
         opt_gen, opt_adv = self.optimizers()
 
-        # 1) Adversary pass (no DP noise)
-        opt_adv.zero_grad()
+        # 1) Adversary pass (no DP noise); allow multiple updates per generator step
         feats = self._build_features_raw(batch)
         with torch.no_grad():
             feat_flat_detached = self.repr_dropout(feats.view(feats.size(0), -1))
-        logits_adv = self.multi_attr_adversary(feat_flat_detached)
-        y_gender = batch['gender'].view(-1).long()
-        y_occupation = batch['occupation'].view(-1).long()
-        y_genre = batch['genre'].float()
-        y_age = batch['age'].float()
-        loss_gender = F.cross_entropy(logits_adv['gender'], y_gender)
-        loss_occupation = F.cross_entropy(logits_adv['occupation'], y_occupation)
-        loss_genre = F.binary_cross_entropy_with_logits(logits_adv['genre'], y_genre)
-        loss_age = F.mse_loss(logits_adv['age'].squeeze(), y_age.squeeze())
-        adv_loss = loss_gender + loss_occupation + loss_genre + loss_age
-        self.manual_backward(adv_loss)
-        opt_adv.step()
-        self.log("adv_loss", adv_loss, prog_bar=False)
-        self.log("adv_gender_loss", loss_gender, prog_bar=False)
-        self.log("adv_occupation_loss", loss_occupation, prog_bar=False)
-        self.log("adv_genre_loss", loss_genre, prog_bar=False)
-        self.log("adv_age_loss", loss_age, prog_bar=False)
+        # Under strong privacy (large noise), reduce adversary update frequency
+        adv_updates = max(1, int(self.adv_update_freq // 2)) if float(self.noise_multiplier) >= 1.0 else int(self.adv_update_freq)
+        # Prepare labels only for enabled attributes
+        y_gender = batch['gender'].view(-1).long() if self.use_gender else None
+        y_occupation = batch['occupation'].view(-1).long() if self.use_occupation else None
+        y_genre = batch['genre'].float() if self.use_genre else None
+        y_age = batch['age'].float() if self.use_age else None
 
-        # 2) Generator pass (DP-SGD)
-        opt_gen.zero_grad()
+        last_adv_loss = None
+        for _ in range(adv_updates):
+            opt_adv.zero_grad()
+            logits_adv = self.multi_attr_adversary(feat_flat_detached)
+            adv_loss = torch.tensor(0.0, device=self.device)
+            if self.use_gender:
+                loss_gender = F.cross_entropy(logits_adv['gender'], y_gender)
+                adv_loss = adv_loss + loss_gender
+            else:
+                loss_gender = None
+            if self.use_occupation:
+                loss_occupation = F.cross_entropy(logits_adv['occupation'], y_occupation)
+                adv_loss = adv_loss + loss_occupation
+            else:
+                loss_occupation = None
+            if self.use_genre:
+                loss_genre = F.binary_cross_entropy_with_logits(logits_adv['genre'], y_genre)
+                adv_loss = adv_loss + (0.5 * loss_genre if float(self.noise_multiplier) >= 1.0 else loss_genre)
+            else:
+                loss_genre = None
+            if self.use_age:
+                loss_age = F.mse_loss(logits_adv['age'].squeeze(), y_age.squeeze())
+                adv_loss = adv_loss + (0.5 * loss_age if float(self.noise_multiplier) >= 1.0 else loss_age)
+            else:
+                loss_age = None
+            self.manual_backward(adv_loss)
+            opt_adv.step()
+            last_adv_loss = adv_loss.detach()
+
+        if last_adv_loss is not None:
+            self.log("adv_loss", last_adv_loss, prog_bar=False)
+            if self.use_gender and loss_gender is not None:
+                self.log("adv_gender_loss", loss_gender.detach(), prog_bar=False)
+            if self.use_occupation and loss_occupation is not None:
+                self.log("adv_occupation_loss", loss_occupation.detach(), prog_bar=False)
+            if self.use_genre and loss_genre is not None:
+                self.log("adv_genre_loss", loss_genre.detach(), prog_bar=False)
+            if self.use_age and loss_age is not None:
+                self.log("adv_age_loss", loss_age.detach(), prog_bar=False)
+
+        # 2) Generator pass (DP-SGD) -- microbatch approximation to per-sample clipping
+        # Treat each small microbatch as a unit for clipping; report as an approximation in the paper.
+        lambda_eff = self._noise_adapt(self._lambda_adv)
+        opt_gen.zero_grad(set_to_none=True)
         batch_size = batch['user_id'].shape[0]
-        microbatch_size = self.dp_microbatch_size
-        n_microbatches = (batch_size + microbatch_size - 1) // microbatch_size
+        C = float(self.dp_max_grad_norm)
+        sigma = float(self.noise_multiplier)
+        m = max(1, int(self.dp_microbatch_size))  # e.g., 4
+
         main_losses = []
         privacy_losses = []
-        grads = [torch.zeros_like(p) for p in opt_gen.param_groups[0]['params']]
-        for i in range(n_microbatches):
-            mb_start = i * microbatch_size
-            mb_end = min((i + 1) * microbatch_size, batch_size)
-            mb_slice = slice(mb_start, mb_end)
-            mb = {k: v[mb_slice] for k, v in batch.items()}
+        conf_penalties = []
+
+        # Generator params only (must match opt_gen param order)
+        gen_params = [
+            p for n, p in self.named_parameters()
+            if "multi_attr_adversary" not in n and p.requires_grad
+        ]
+        sum_clipped_grads = [torch.zeros_like(p) for p in gen_params]
+        had_any_grad = [False for _ in gen_params]
+
+        # Iterate microbatches
+        n_mb = (batch_size + m - 1) // m
+        for i in range(n_mb):
+            mb_start = i * m
+            mb_end = min((i + 1) * m, batch_size)
+            mb = {k: v[mb_start:mb_end] for k, v in batch.items()}
+
+            # Build features per microbatch to avoid reusing the same graph across backward calls
             features = self._build_features(mb)
             preds = self._predict_from_features(features)
             targets = mb['rating'].reshape_as(preds)
+
             main_loss = self.loss_fn(preds, targets)
+            # Use mean over microbatch for stability
+            main_loss_mean = main_loss if main_loss.dim() == 0 else main_loss.mean()
+
             privacy_loss = torch.tensor(0.0, device=self.device)
             if self._lambda_adv > 0:
+                # freeze adversary params while probing privacy
                 self._set_requires_grad(self.multi_attr_adversary, False)
                 feat_flat = features.view(features.size(0), -1)
                 logits_priv = self.multi_attr_adversary(feat_flat)
                 privacy_loss = -self._compute_entropy_losses(logits_priv)
-            total_loss = main_loss + self._lambda_adv * privacy_loss
-            main_losses.append(main_loss.detach())
-            privacy_losses.append(privacy_loss.detach() if self._lambda_adv > 0 else torch.tensor(0.0, device=self.device))
-            # Compute gradients for this microbatch
-            opt_gen.zero_grad()
-            self.manual_backward(total_loss)
-            # Clip per-microbatch gradients and accumulate
-            for j, p in enumerate(opt_gen.param_groups[0]['params']):
-                if p.grad is not None:
-                    grad = p.grad.detach()
-                    grad_norm = grad.norm(2)
-                    if grad_norm > self.dp_max_grad_norm:
-                        grad = grad * (self.dp_max_grad_norm / (grad_norm + 1e-6))
-                    grads[j] = grads[j] + grad
-            if self._lambda_adv > 0:
                 self._set_requires_grad(self.multi_attr_adversary, True)
-        # Add noise and set gradients
-        for j, p in enumerate(opt_gen.param_groups[0]['params']):
-            noise = torch.normal(
-                mean=0.0,
-                std=self.noise_multiplier * self.dp_max_grad_norm,
-                size=p.shape,
-                device=p.device,
-            )
-            p.grad = (grads[j] + noise) / n_microbatches
+
+            conf_pen = self._prediction_confidence_penalty(preds)
+            conf_w = self._conf_weight()
+            total_loss = main_loss_mean + lambda_eff * privacy_loss + conf_w * conf_pen
+
+            main_losses.append(main_loss_mean.detach())
+            privacy_losses.append(privacy_loss.detach() if self._lambda_adv > 0 else torch.tensor(0.0, device=self.device))
+            conf_penalties.append(conf_pen.detach())
+
+            # Backward on the microbatch
+            self.zero_grad(set_to_none=True)
+            self.manual_backward(total_loss)
+
+            # Collect grads, clip global L2 to C, and accumulate (approx. per-sample via microbatches)
+            per_param_grads = [p.grad.detach() if p.grad is not None else None for p in gen_params]
+            if any(g is not None for g in per_param_grads):
+                flat = torch.cat([g.view(-1) for g in per_param_grads if g is not None])
+                global_norm = torch.linalg.vector_norm(flat, ord=2)
+                scale = min(1.0, C / (global_norm + 1e-6))
+                for j, g in enumerate(per_param_grads):
+                    if g is not None:
+                        sum_clipped_grads[j].add_(g * scale)
+                        had_any_grad[j] = True
+
+        # Add Gaussian noise to summed, clipped grads and average by TRUE batch size
+        # NOTE: This is an approximation to per-sample DP; we keep noise std = sigma*C per parameter.
+        for j, p in enumerate(gen_params):
+            if had_any_grad[j]:
+                noise = torch.normal(mean=0.0, std=sigma * C, size=p.shape, device=p.device)
+                p.grad = (sum_clipped_grads[j] + noise) / float(batch_size)
+            else:
+                p.grad = None
+
         opt_gen.step()
         self.privacy_steps += 1
-        if self.accountant is not None and self.sample_rate is not None:
-            self.accountant.step(noise_multiplier=self.noise_multiplier, sample_rate=self.sample_rate)
+        if self.accountant is not None and self.noise_multiplier > 0:
+            if self.sample_rate is None:
+                try:
+                    dl = self.trainer.datamodule.train_dataloader()
+                    bs = getattr(dl, "batch_size", None)
+                    ds = getattr(getattr(dl, "dataset", None), "__len__", lambda: None)()
+                    self.sample_rate = (float(bs) / float(ds)) if (bs and ds) else None
+                except Exception:
+                    self.sample_rate = None
+            if self.sample_rate is not None:
+                self.accountant.step(noise_multiplier=self.noise_multiplier, sample_rate=self.sample_rate)
         # Logging
         mean_main_loss = torch.stack(main_losses).mean()
         mean_privacy_loss = torch.stack(privacy_losses).mean() if self._lambda_adv > 0 else torch.tensor(0.0, device=self.device)
@@ -373,10 +519,25 @@ class DPFM_GANTrainer(BaseModel):
         self.log("gen_total_loss", total_loss, prog_bar=False)
         if self._lambda_adv > 0:
             self.log("gen_privacy_loss", mean_privacy_loss, prog_bar=False)
+        # confidence penalty mean
+        try:
+            mean_conf_pen = torch.stack(conf_penalties).mean()
+            self.log("gen_conf_pen", mean_conf_pen, prog_bar=False)
+        except Exception:
+            pass
+        # log effective lambda used this step
+        try:
+            self.log("lambda_adv_eff_step", torch.tensor(lambda_eff, dtype=torch.float32, device=self.device), prog_bar=False)
+            self.log("conf_weight", torch.tensor(self._conf_weight(), dtype=torch.float32, device=self.device), prog_bar=False)
+            self.log("adv_updates_eff", torch.tensor(float(adv_updates), dtype=torch.float32, device=self.device), prog_bar=False)
+        except Exception:
+            pass
+        
         self.log("train_loss", total_loss, prog_bar=True)
         # Only use full batch preds/targets for metrics
-        features = self._build_features(batch)
-        preds = self._predict_from_features(features)
+        # Recompute full-batch preds for logging/metrics (no backward here)
+        features_fb = self._build_features(batch)
+        preds = self._predict_from_features(features_fb)
         targets = batch['rating'].reshape_as(preds)
         self.train_mse.update(preds, targets)
         self.train_mae.update(preds, targets)
@@ -474,4 +635,4 @@ class DPFM_GANTrainer(BaseModel):
             lr=self.hparams.learning_rate * 0.5,
             weight_decay=1e-4
         )
-        return [opt_gen, opt_adv]
+        return [opt_gen, opt_adv]   

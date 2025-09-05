@@ -1,17 +1,35 @@
 seed_everything: 42
 
+
+
 model:
   class_path: models.WGAN
   init_args:
-    num_attack_samples: 10000
+    # --- common ---
     noise_dim: 32
-    output_dim: 25
-    lr: 1e-6
+    lr: 1e-4
     n_critic: 5
-    lambda_gp: 0.5
-    pred_file: "cus_mid"  # Name of the prediction file for attack
+    lambda_gp: 10
+    gen_hidden: [512, 512, 512, 512]
+    disc_hidden: [1024, 1024, 1024]
+    pred_file: "base_strong"   # links to predicted_data/base_strong.hdf5
 
+    # --- if data-distribution mode (full 25-D) ---
+    cond_dim: 3                # or 1 / 0 depending on training
+    output_dim: 25
+    condkl_age_col: 2
+    condkl_gender_col: 3
+    condkl_occupation_col: 4
+    condkl_num_occupations: 21
+    condkl_age_bins: 7
+    rating_idx: 24             # canonical rating index
 
+    # --- if surrogate mode (x→y) ---
+    surrogate_mode: true        # switch this on
+    x_dim: 24                   # first 24 dims (features)
+    y_dim: 1                    # predicting rating/5
+    output_dim: 1               # match y_dim
+    lambda_fid: 10.0
 
 do_validate: false
 do_test: false

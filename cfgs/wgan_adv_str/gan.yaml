@@ -1,0 +1,53 @@
+seed_everything: 42
+
+model:
+  class_path: models.WGAN
+  init_args:
+    # --- core ---
+
+    output_dim: 45                  # 2 + 1 + 1 + 21 + 19 + 1
+    noise_dim: 32
+    cond_dim: 3                     # [gender, occ_id/(K-1), age_bucket/6]
+    lr: 1e-3
+    n_critic: 5
+    lambda_gp: 10
+    gen_hidden:  [512, 512, 512, 512]
+    disc_hidden: [1024, 1024, 1024]
+
+    # --- schema (ALL taken from YAML now) ---
+    # indices/widths
+    condkl_age_col: 2               # age
+    condkl_gender_col: 3            # gender
+    condkl_occupation_col: 4        # start of OCC block
+    condkl_num_occupations: 21      # OCC classes (=> width when one-hot)
+    use_onehot_occ: true            # <- enforce one-hot occ; drives 45-D
+    genre_dim: 19                   # number of genre features
+    rating_idx: 44                  # last column in 45-D
+
+    # --- plotting / sampling ---
+    pred_file: "Adv_strong"
+    condkl_age_bins: 7
+    num_attack_samples: 100000
+
+    # --- auxiliaries / conditioning (optional but helpful for 45-D) ---
+    rebalance_cond_sampling: true
+
+    # aux heads
+    lambda_aux_occ: 2.5
+    lambda_aux_gender: 1.5
+    lambda_aux_age: 2.0
+    lambda_aux_genre: 1.5
+    attr_hidden: 256
+
+    # genre conditioning + marginal matching
+    cond_include_genre: true
+    cond_genre_proj_dim: 16
+    lambda_genre_kl: 0.2
+
+
+
+do_train: false
+do_validate: false
+do_test: false
+do_predict: false
+do_attack: true

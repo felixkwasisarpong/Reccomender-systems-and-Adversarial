@@ -3,34 +3,47 @@ seed_everything: 42
 model:
   class_path: models.WGAN
   init_args:
+    # --- core ---
+
+    output_dim: 45                  # 2 + 1 + 1 + 21 + 19 + 1
     noise_dim: 32
-    output_dim: 25
-    lr: 1e-6
+    cond_dim: 3                     # [gender, occ_id/(K-1), age_bucket/6]
+    lr: 1e-3
     n_critic: 5
-    lambda_gp: 0.5
-    pred_file: "opacus_strong"  # Name of the prediction file for attack
+    lambda_gp: 10
+    gen_hidden:  [512, 512, 512, 512]
+    disc_hidden: [1024, 1024, 1024]
 
-    # How many synthetic samples to draw for evaluation/plots at the end
-    num_attack_samples: 10000
+    # --- schema (ALL taken from YAML now) ---
+    # indices/widths
+    condkl_age_col: 2               # age
+    condkl_gender_col: 3            # gender
+    condkl_occupation_col: 4        # start of OCC block
+    condkl_num_occupations: 21      # OCC classes (=> width when one-hot)
+    use_onehot_occ: true            # <- enforce one-hot occ; drives 45-D
+    genre_dim: 19                   # number of genre features
+    rating_idx: 44                  # last column in 45-D
 
-    # If you pass a condition vector during training, set cond_dim>0
-    cond_dim: 0
+    # --- plotting / sampling ---
+    pred_file: "opacus_strong"
+    condkl_age_bins: 7
+    num_attack_samples: 100000
 
-    # Optional exploitation loss against a target model (leave 0.0 if unused)
-    lambda_exploit: 0.2
+    # --- auxiliaries / conditioning (optional but helpful for 45-D) ---
+    rebalance_cond_sampling: true
 
-    # -----------------------------
-    # Conditional-KL panel settings
-    # -----------------------------
-    # Assumed 25-d vector layout:
-    #   [0] user_id, [1] item_id, [2] age, [3] gender, [4] occupation,
-    #   [5..23] genres (19 dims), [24] pred_rating
-    # If your layout differs, update these indices accordingly.
-    condkl_gender_col: 2
-    condkl_age_col: 3
-    condkl_occupation_col: 4
-    condkl_num_occupations: 21
-    condkl_age_bins: 30
+    # aux heads
+    lambda_aux_occ: 2.5
+    lambda_aux_gender: 1.5
+    lambda_aux_age: 2.0
+    lambda_aux_genre: 1.5
+    attr_hidden: 256
+
+    # genre conditioning + marginal matching
+    cond_include_genre: true
+    cond_genre_proj_dim: 16
+    lambda_genre_kl: 0.2
+
 
 do_train: false
 do_validate: false

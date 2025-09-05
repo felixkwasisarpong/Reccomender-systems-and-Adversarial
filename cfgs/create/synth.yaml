@@ -1,17 +1,49 @@
 seed_everything: 42
 
+
 model:
   class_path: models.WGAN
   init_args:
-    num_attack_samples: 10000
+    # --- core ---
     noise_dim: 32
-    output_dim: 25
-    lr: 1e-6
+    lr: 1e-4
     n_critic: 5
-    lambda_gp: 0.5
-    pred_file: "cus_mid"  # Name of the prediction file for attack
+    lambda_gp: 10
+    gen_hidden: [512, 512, 512, 512]
+    disc_hidden: [1024, 1024, 1024]
+    pred_file: "opacus_strong"          # matches predicted_data/base_strong.hdf5
 
+    # --- layout (45-D) ---
+    output_dim: 45                    # 2 + 1 + 1 + 21 + 19 + 1
+    use_onehot_occ: true
+    genre_dim: 19
+    rating_idx: 44                    # last column in 45-D
 
+    # column indices (in 45-D)
+    condkl_age_col: 2
+    condkl_gender_col: 3
+    condkl_occupation_col: 4          # start of OCC one-hot block
+    condkl_num_occupations: 21
+    condkl_age_bins: 7
+
+    # --- conditioning ---
+    cond_dim: 3                       # [gender, occ/(K-1), age_bucket/6]
+    rebalance_cond_sampling: true
+    cond_include_genre: true          # include genre in cond
+    cond_genre_proj_dim: 16           # projection head size (0 to disable)
+
+    # --- optional auxiliaries (help stabilize) ---
+    lambda_aux_occ: 0.5
+    lambda_aux_age: 0.5
+    lambda_aux_gender: 0.0
+    lambda_aux_genre: 0.5
+    attr_hidden: 256
+
+    # --- plotting / sampling ---
+    num_attack_samples: 100000
+
+    
+ 
 
 do_validate: false
 do_test: false

@@ -3,13 +3,14 @@ seed_everything: 0
 model:
   class_path: models.CustomDP_SGD
   init_args:
-    num_users: 943
-    num_items: 1682
+    num_users: 6040          # safe upper bound (train split had 4832)
+    num_items: 3952          # full ML-1M item ID range
     embed_dim: 32            # replace with dataset.get_vocab_sizes()['num_items']
     num_genders: 2               # typically 0 (F), 1 (M)
     num_occupations: 21          # number of unique occupation categories
     genre_dim: 19
     use_attrs: true                # from genre_onehot shape
+    use_genre: true
     enable_dp: false
     noise_type: "gaussian"  # Options: "gaussian", "laplace"
     mlp_dims: [128, 64]
@@ -19,8 +20,8 @@ model:
     loss_function: "Huber"
     target_min: 1.0
     target_max: 5.0
-    noise_scale: 4.65
-    dp_microbatch_size: 32
+    noise_scale: 1.85
+    dp_microbatch_size: 64
     clip_norm: 1.0
     delta: 1e-5
     predict_file: "custom_strong"  # Name of the file to save predictions
@@ -31,4 +32,3 @@ do_test: true
 do_predict: false
 do_validate: true  # Important for DP monitoring
 do_analyze: false
-

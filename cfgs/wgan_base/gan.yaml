@@ -1,0 +1,28 @@
+seed_everything: 42
+
+model:
+  class_path: WGAN
+  init_args:
+
+    surrogate_mode: true
+    x_dim: 24          # first 24 dims (no rating)
+    y_dim: 1           # rating/5
+    output_dim: 1
+    cond_dim: 0
+    noise_dim: 32
+    lr: 1e-4
+    n_critic: 5
+    lambda_gp: 10
+    lambda_fid: 10.0
+    gen_hidden: [512, 512, 512, 512]
+    disc_hidden: [1024, 1024, 1024]
+    # plotting keys are ignored in surrogate_mode but harmless to keep:
+    pred_file: "base_strong"
+    cond_dim: 0
+
+
+do_train: false
+do_validate: false
+do_test: false
+do_predict: false
+do_attack: true

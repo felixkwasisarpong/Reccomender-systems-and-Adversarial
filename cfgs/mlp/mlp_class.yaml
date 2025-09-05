@@ -1,17 +1,41 @@
 seed_everything: 42
 
+attack_train_source: "synthetic_outputs"
+attack_test_source:  "predicted_data"
+synthetic_hdf5_path: "synthetic_outputs/opacus_strong.hdf5"
+blackbox_hdf5_path:  "predicted_data/opacus_strong.hdf5"
+
+
+attack_include_identifiers: false
+attack_include_rating: true
+attack_identifiers_one_based: true
+attack_remap_occ_1_based: true
+attack_age_label_mode: "code"
+
+# shared classifier args (target_attr overridden per target above)
 model:
   class_path: models.AttributeClassifier
   init_args:
-    target_attr: "age"
-    hidden_dims: [256, 128]
-    dropout_rate: 0.1
-    lr: 1e-3
-    weight_decay: 1e-5
-    pred_file: "Adv_strong"
-    include_rating: false
+    input_dim: null
     use_identifiers: false
-    strict_feature_check: true
+    include_rating: true
+    hidden_dims: [256, 256]
+    dropout_rate: 0.1
+    use_batchnorm: true
+    input_layernorm: false
+    scheduler: "cosine"
+    lr: 1e-3
+    weight_decay: 1e-4
+    use_class_weight: true
+    focal_gamma: 0.0
+    age_bucket_values: [1,18,25,35,45,50,56]
+    targets: ["genre", "age", "gender", "occupation"]
+    age_as_buckets: true
+    pred_file: "opacus_strong"
+
+
+
+  
 
 # Run flags for this MLP auditor
 do_train: true

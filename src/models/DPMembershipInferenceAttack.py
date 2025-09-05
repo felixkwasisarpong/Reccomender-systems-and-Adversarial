@@ -58,6 +58,9 @@ class DPMembershipInferenceAttack(DPModel):
 
         self.pos_label = 1
         self._scores_inverted = False   # whether we flipped scores (non-member mean > member mean)
+        # Diagnostics: store abs errors by group
+        self._member_abs_err = []
+        self._nonmember_abs_err = []
 
     # ---------------------------
     # Signal builders
@@ -155,6 +158,24 @@ class DPMembershipInferenceAttack(DPModel):
         if nonmember_mask.any():
             self.nonmember_scores.extend(ensemble[nonmember_mask].detach().cpu().tolist())
 
+        # Log per-batch diagnostics: MAE by group
+        with torch.no_grad():
+            abs_err = (preds - targets).abs()
+            if member_mask.any():
+                mae_m = abs_err[member_mask].mean()
+                self._member_abs_err.append(float(mae_m.detach().cpu()))
+                try:
+                    self.log("mia/batch_member_mae", mae_m, on_step=False, on_epoch=True)
+                except Exception:
+                    pass
+            if nonmember_mask.any():
+                mae_n = abs_err[nonmember_mask].mean()
+                self._nonmember_abs_err.append(float(mae_n.detach().cpu()))
+                try:
+                    self.log("mia/batch_nonmember_mae", mae_n, on_step=False, on_epoch=True)
+                except Exception:
+                    pass
+
         # Helpful batch-level logs
         self.log("batch_avg_score", ensemble.mean(), on_step=False, on_epoch=True)
         self.log("batch_confidence", conf.mean(), on_step=False, on_epoch=True)
@@ -237,6 +258,13 @@ class DPMembershipInferenceAttack(DPModel):
             auc, fpr, tpr, prec, rec, ap, opt_thr, preds_opt
         )
         self._dump_scores_csv()
+
+        # Print final MAE diagnostics
+        if self._member_abs_err and self._nonmember_abs_err:
+            m_mae = float(np.mean(self._member_abs_err))
+            n_mae = float(np.mean(self._nonmember_abs_err))
+            print(f"[MIA][diag] mean MAE — members={m_mae:.4f}, nonmembers={n_mae:.4f}, Δ={m_mae - n_mae:.4f}")
+        self._member_abs_err.clear(); self._nonmember_abs_err.clear()
 
         # clear for next run
         self.clear_all_scores()

@@ -44,3 +44,7 @@ plugins: null
 sync_batchnorm: false
 reload_dataloaders_every_n_epochs: 0
 default_root_dir: ./lightning_logs/create
+
+
+
+  

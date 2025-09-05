@@ -20,4 +20,6 @@ module load cuda/11.0          # Adjust based on the available CUDA version
 
 conda activate wildfire
 
-python src/Train.py --config=cfgs/mlp/mlp_class.yaml --trainer=cfgs/mlp/trainer.yaml  --data=cfgs/mlp/data_loader.yaml  --do_train=False --do_validate=False --do_test=False --seed_everything=0 --trainer.max_epochs=50 --do_classifier_attack=True  --data.data_dir synthetic_outputs
+python src/Train.py --config=cfgs/mlp/mlp_class.yaml --trainer=cfgs/mlp/trainer.yaml  --data=cfgs/mlp/data_loader.yaml  --do_train=False --do_validate=False --do_test=False --seed_everything=0 --trainer.max_epochs=50 --do_classifier_attack=True  --data.data_dir synthetic_outputs  --attack_train_source synthetic_outputs --attack_test_source predicted_data
+
+python src/Train.py --config=cfgs/mlp/mlp_class.yaml --trainer=cfgs/mlp/trainer.yaml  --data=cfgs/mlp/data_loader.yaml  --do_train=False --do_validate=False --do_test=False --seed_everything=0 --trainer.max_epochs=10 --do_classifier_attack=True  --data.data_dir synthetic_outputs --attack_train_source=synthetic_outputs  --blackbox_hdf5_path=predicted_data/base_strong.hdf5 --synthetic_hdf5_path=synthetic_outputs/base_strong.hdf5

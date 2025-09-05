@@ -1,0 +1,3 @@
+[WGAN][aux] enabled heads: gender=True, occ=True, age=True, genre=True | hid=256
+[WGAN][warn] output_dim=45 (expected 25 for canonical layout)
+[DM][WGAN] expected_dim=45 rating_idx=44
